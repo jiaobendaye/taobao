@@ -76,14 +76,11 @@ func runCLI() {
 		fmt.Printf("  总计: %d条\n", result.Summary.Total)
 
 	case "dangkou":
-		if len(os.Args) < 3 {
-			fmt.Println("用法: phonecase-tools dangkou <订单Excel文件> [自设编码.xlsx]")
+		if len(os.Args) < 4 {
+			fmt.Println("用法: phonecase-tools dangkou <订单Excel文件> <自设编码.xlsx>")
 			os.Exit(1)
 		}
-		configPath := ""
-		if len(os.Args) >= 4 {
-			configPath = os.Args[3]
-		}
+		configPath := os.Args[3]
 		result, err := dangkou.Process(os.Args[2], configPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
@@ -97,14 +94,11 @@ func runCLI() {
 		fmt.Printf("  总计: %d条\n", result.Total)
 
 	case "peijian":
-		if len(os.Args) < 3 {
-			fmt.Println("用法: phonecase-tools peijian <订单Excel文件> [配件编码.xlsx]")
+		if len(os.Args) < 4 {
+			fmt.Println("用法: phonecase-tools peijian <订单Excel文件> <配件编码.xlsx>")
 			os.Exit(1)
 		}
-		configPath := ""
-		if len(os.Args) >= 4 {
-			configPath = os.Args[3]
-		}
+		configPath := os.Args[3]
 		result, err := peijian.Process(os.Args[2], configPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
@@ -117,14 +111,11 @@ func runCLI() {
 		fmt.Printf("  总计: %d条\n", result.Total)
 
 	case "pizhi":
-		if len(os.Args) < 3 {
-			fmt.Println("用法: phonecase-tools pizhi <订单Excel文件> [皮质壳配置表.xlsx]")
+		if len(os.Args) < 4 {
+			fmt.Println("用法: phonecase-tools pizhi <订单Excel文件> <皮质壳配置表.xlsx>")
 			os.Exit(1)
 		}
-		configPath := ""
-		if len(os.Args) >= 4 {
-			configPath = os.Args[3]
-		}
+		configPath := os.Args[3]
 		result, err := pizhi.Process(os.Args[2], configPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
