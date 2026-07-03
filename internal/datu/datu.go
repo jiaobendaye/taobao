@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -332,6 +333,11 @@ func writeOutput(outputPath string, engine *Engine, result *Result) error {
 			continue
 		}
 
+		// 按素材排序
+		sort.Slice(rows, func(i, j int) bool {
+			return rows[i].Material < rows[j].Material
+		})
+
 		sheetName := factoryName
 		if !firstWritten {
 			if err := out.SetSheetName("Sheet1", sheetName); err != nil {
@@ -351,9 +357,9 @@ func writeOutput(outputPath string, engine *Engine, result *Result) error {
 	return out.SaveAs(outputPath)
 }
 
-// writeFactorySheet 写单个工厂 sheet：表头 [编码, 手机型号, 素材, 数量, 姓名]
+// writeFactorySheet 写单个工厂 sheet：表头 [序号, 编码, 手机型号, 素材, 数量, 姓名]
 func writeFactorySheet(out *excelize.File, sheetName string, rows []AggregateRow) {
-	headers := []string{"编码", "手机型号", "素材", "数量", "姓名"}
+	headers := []string{"序号", "编码", "手机型号", "素材", "数量", "姓名"}
 	for colIdx, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(colIdx+1, 1)
 		_ = out.SetCellValue(sheetName, cell, h)
@@ -361,11 +367,12 @@ func writeFactorySheet(out *excelize.File, sheetName string, rows []AggregateRow
 
 	for i, r := range rows {
 		rowNum := i + 2
-		_ = out.SetCellValue(sheetName, fmt.Sprintf("A%d", rowNum), r.Code)
-		_ = out.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), r.Model)
-		_ = out.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), r.Material)
-		_ = out.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), r.Quantity)
-		_ = out.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), r.Name)
+		_ = out.SetCellValue(sheetName, fmt.Sprintf("A%d", rowNum), i+1)
+		_ = out.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), r.Code)
+		_ = out.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), r.Model)
+		_ = out.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), r.Material)
+		_ = out.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), r.Quantity)
+		_ = out.SetCellValue(sheetName, fmt.Sprintf("F%d", rowNum), r.Name)
 	}
 }
 
