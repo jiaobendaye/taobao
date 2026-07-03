@@ -128,14 +128,11 @@ func runCLI() {
 		}
 
 	case "datu":
-		if len(os.Args) < 3 {
-			fmt.Println("用法: phonecase-tools datu <订单Excel文件> [打图工厂配置表.xlsx]")
+		if len(os.Args) < 4 {
+			fmt.Println("用法: phonecase-tools datu <订单Excel文件> <打图工厂配置表.xlsx>")
 			os.Exit(1)
 		}
-		configPath := ""
-		if len(os.Args) >= 4 {
-			configPath = os.Args[3]
-		}
+		configPath := os.Args[3]
 		result, err := datu.Process(os.Args[2], configPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "错误: %v\n", err)

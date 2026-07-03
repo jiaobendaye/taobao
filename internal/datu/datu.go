@@ -172,11 +172,7 @@ func ParseDatuCode(s string) (material, code string) {
 // Process 读取订单 Excel 并按打图工厂配置聚合分配
 func Process(filename, configPath string) (*Result, error) {
 	if configPath == "" {
-		path := common.LoadConfigPath(configPathName)
-		if path == "" {
-			return nil, fmt.Errorf("未指定打图工厂配置文件路径，且无法加载已保存的路径\n请通过命令行传入: phonecase-tools datu <订单文件> <打图工厂配置表.xlsx>")
-		}
-		configPath = path
+		return nil, fmt.Errorf("打图工厂配置文件不能为空\n用法: phonecase-tools datu <订单文件> <打图工厂配置表.xlsx>")
 	}
 
 	engine, err := LoadEngine(configPath)
