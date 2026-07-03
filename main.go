@@ -12,6 +12,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
 
 	"taobao/internal/dangkou"
+	"taobao/internal/datu"
 	"taobao/internal/filter"
 	"taobao/internal/logger"
 	"taobao/internal/peijian"
@@ -135,6 +136,26 @@ func runCLI() {
 			fmt.Printf("  %s: %d 个型号\n", stall, len(rows))
 		}
 
+	case "datu":
+		if len(os.Args) < 3 {
+			fmt.Println("用法: phonecase-tools datu <订单Excel文件> [打图工厂配置表.xlsx]")
+			os.Exit(1)
+		}
+		configPath := ""
+		if len(os.Args) >= 4 {
+			configPath = os.Args[3]
+		}
+		result, err := datu.Process(os.Args[2], configPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("已生成 %s\n", result.OutputPath)
+		fmt.Printf("  总订单: %d条\n", result.Total)
+		for factory, rows := range result.FactoryAggregates {
+			fmt.Printf("  %s: %d 个型号\n", factory, len(rows))
+		}
+
 	default:
 		fmt.Println("用法:")
 		fmt.Println("  phonecase-tools                       启动桌面应用")
@@ -142,6 +163,7 @@ func runCLI() {
 		fmt.Println("  phonecase-tools dangkou <订单Excel文件> [自设编码.xlsx]   档口分配")
 		fmt.Println("  phonecase-tools peijian <订单Excel文件> [配件编码.xlsx]  配件提取")
 		fmt.Println("  phonecase-tools pizhi <订单Excel文件> [皮质壳配置表.xlsx]  皮质壳分配")
+		fmt.Println("  phonecase-tools datu <订单Excel文件> [打图工厂配置表.xlsx]  打图分配")
 		os.Exit(1)
 	}
 }

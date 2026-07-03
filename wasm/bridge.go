@@ -8,6 +8,7 @@ import (
 	"syscall/js"
 
 	"taobao/internal/dangkou"
+	"taobao/internal/datu"
 	"taobao/internal/filter"
 	"taobao/internal/peijian"
 )
@@ -95,6 +96,33 @@ func peijianProcess(this js.Value, args []js.Value) interface{} {
 	engine := a.EngineJSON.toEngine()
 	data := peijian.ProcessData(a.Rows, a.Headers, engine)
 	return mustMarshal(peijianResult{Data: data})
+}
+
+// ---- Datu ----
+
+type datuArgs struct {
+	Rows       [][]string         `json:"rows"`
+	Headers    []string           `json:"headers"`
+	EngineJSON datuEngineJSON     `json:"engine"`
+}
+
+type datuResult struct {
+	Data  *datu.Result `json:"data"`
+	Error string       `json:"error,omitempty"`
+}
+
+func datuProcess(this js.Value, args []js.Value) interface{} {
+	if len(args) < 1 {
+		return mustMarshal(datuResult{Error: "datuProcess: missing JSON argument"})
+	}
+	var a datuArgs
+	if err := json.Unmarshal([]byte(args[0].String()), &a); err != nil {
+		return mustMarshal(datuResult{Error: fmt.Sprintf("datuProcess: invalid JSON: %v", err)})
+	}
+
+	engine := a.EngineJSON.toEngine()
+	data := datu.ProcessData(a.Rows, a.Headers, engine)
+	return mustMarshal(datuResult{Data: data})
 }
 
 // ---- helpers ----

@@ -4,6 +4,7 @@ package main
 
 import (
 	"taobao/internal/dangkou"
+	"taobao/internal/datu"
 	"taobao/internal/peijian"
 )
 
@@ -48,5 +49,19 @@ func (e *peijianEngineJSON) toEngine() *peijian.Engine {
 		Mapping:    e.Mapping,
 		Stalls:     e.Stalls,
 		StallOrder: e.StallOrder,
+	}
+}
+
+// ---- Datu Engine JSON types ----
+
+type datuEngineJSON struct {
+	FactoryByProductID map[string]string `json:"factoryByProductID"`
+	Factories          []string          `json:"factories"`
+}
+
+func (e *datuEngineJSON) toEngine() *datu.Engine {
+	return &datu.Engine{
+		FactoryByProductID: e.FactoryByProductID,
+		Factories:          e.Factories,
 	}
 }

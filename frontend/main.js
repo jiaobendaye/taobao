@@ -12,6 +12,8 @@ const btnPeijian = document.getElementById('btnPeijian');
 const btnDangkou = document.getElementById('btnDangkou');
 const btnPizhi = document.getElementById('btnPizhi');
 const cfgPizhi = document.getElementById('cfgPizhi');
+const btnDatu = document.getElementById('btnDatu');
+const cfgDatu = document.getElementById('cfgDatu');
 const processing = document.getElementById('processing');
 const processingText = document.getElementById('processingText');
 const result = document.getElementById('result');
@@ -74,6 +76,7 @@ function setFile(path) {
     btnPeijian.disabled = false;
     btnDangkou.disabled = false;
     btnPizhi.disabled = false;
+    btnDatu.disabled = false;
 }
 
 // ---- 配置面板 ----
@@ -90,6 +93,7 @@ document.getElementById('cfgFilter').addEventListener('click', function() { togg
 document.getElementById('cfgPeijian').addEventListener('click', function() { toggleConfig('peijian'); });
 document.getElementById('cfgDangkou').addEventListener('click', function() { toggleConfig('dangkou'); });
 document.getElementById('cfgPizhi').addEventListener('click', function() { toggleConfig('pizhi'); });
+document.getElementById('cfgDatu').addEventListener('click', function() { toggleConfig('datu'); });
 configClose.addEventListener('click', function() { configPanel.style.display = 'none'; });
 
 async function openConfig(type) {
@@ -134,6 +138,15 @@ async function openConfig(type) {
             '<button class="btn-sm" id="cfgSelectPizhiFile">选择文件</button>' +
             '</div>' +
             '<div class="hint">选择皮质壳配置 Excel（含档口 sheet 与嵌入图片）</div></div>';
+    } else if (type === 'datu') {
+        var datuPath = await window.go.main.App.GetDatuConfigPath();
+        title = '打图分配配置 (打图工厂配置表.xlsx)';
+        body = '<div class="config-field"><label>打图工厂配置文件路径</label>' +
+            '<div style="display:flex;gap:8px">' +
+            '<input type="text" id="cfgDatuPath" value="' + esc(datuPath || '') + '" style="flex:1" readonly>' +
+            '<button class="btn-sm" id="cfgSelectDatuFile">选择文件</button>' +
+            '</div>' +
+            '<div class="hint">选择打图工厂配置 Excel（每列一个工厂，列名为工厂名）</div></div>';
     }
     configTitle.textContent = title;
     configBody.innerHTML = body;
@@ -201,6 +214,26 @@ async function openConfig(type) {
             }
         }, 0);
     }
+    if (type === 'datu') {
+        setTimeout(function() {
+            var btn = document.getElementById('cfgSelectDatuFile');
+            if (btn) {
+                btn.addEventListener('click', async function() {
+                    try {
+                        var path = await window.go.main.App.SelectDatuConfigFile();
+                        if (path) {
+                            document.getElementById('cfgDatuPath').value = path;
+                            configMsg.textContent = '✅ 已保存';
+                            configMsg.style.color = '';
+                        }
+                    } catch (e) {
+                        configMsg.textContent = '❌ ' + (e.message || e || '文件格式错误');
+                        configMsg.style.color = 'var(--danger)';
+                    }
+                });
+            }
+        }, 0);
+    }
 }
 
 configSave.addEventListener('click', async function() {
@@ -225,6 +258,7 @@ btnFilter.addEventListener('click', runFilter);
 btnPeijian.addEventListener('click', runPeijian);
 btnDangkou.addEventListener('click', runDangkou);
 btnPizhi.addEventListener('click', runPizhi);
+btnDatu.addEventListener('click', runDatu);
 
 async function runFilter() {
     if (!selectedFile) return;
@@ -298,6 +332,26 @@ async function runPizhi() {
             html += card(sm[k], k + ' (型号数)');
         }
         html += card(r.unmatched, '未匹配', true);
+        html += card(r.total, '总订单');
+        resultStats.innerHTML = html;
+        result.style.display = 'block';
+    } catch (e) { hideProcessing(); showError(e.message); }
+}
+
+async function runDatu() {
+    if (!selectedFile) return;
+    showProcessing('正在打图分配...');
+    try {
+        var r = await window.go.main.App.RunDatuProcess(selectedFile);
+        hideProcessing();
+        if (!r.success) { showError(r.error); return; }
+        currentOutputDir = r.outputPath ? r.outputPath.replace(/[^/\\]+$/, '') : null;
+        resultTitle.textContent = '打图分配结果';
+        var html = '';
+        var sm = r.factorySummary || {};
+        for (var k in sm) {
+            html += card(sm[k], k + ' (型号数)');
+        }
         html += card(r.total, '总订单');
         resultStats.innerHTML = html;
         result.style.display = 'block';

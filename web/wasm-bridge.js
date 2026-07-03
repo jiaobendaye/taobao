@@ -47,5 +47,9 @@ const WasmBridge = {
 
   peijianProcess(rows, headers, engine) {
     return this.call('goPeijianProcess', { rows, headers, engine });
+  },
+
+  datuProcess(rows, headers, engine) {
+    return this.call('goDatuProcess', { rows, headers, engine });
   }
 };

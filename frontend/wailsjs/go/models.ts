@@ -20,6 +20,26 @@ export namespace main {
 	        this.outputDir = source["outputDir"];
 	    }
 	}
+	export class DatuResult {
+	    success: boolean;
+	    error?: string;
+	    factorySummary: Record<string, number>;
+	    total: number;
+	    outputPath: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DatuResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.error = source["error"];
+	        this.factorySummary = source["factorySummary"];
+	        this.total = source["total"];
+	        this.outputPath = source["outputPath"];
+	    }
+	}
 	export class FilterConfig {
 	    doubtKeywords: string[];
 	    accessoryKeywords: string[];

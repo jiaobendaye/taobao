@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function GetDangkouConfigPath():Promise<string>;
 
+export function GetDatuConfigPath():Promise<string>;
+
 export function GetFilterConfig():Promise<main.FilterConfig>;
 
 export function GetPeijianConfigPath():Promise<string>;
@@ -16,6 +18,8 @@ export function OpenDir(arg1:string):Promise<void>;
 
 export function RunDangkou(arg1:string):Promise<main.DangkouResult>;
 
+export function RunDatuProcess(arg1:string):Promise<main.DatuResult>;
+
 export function RunFilter(arg1:string):Promise<main.FilterResult>;
 
 export function RunPeijianProcess(arg1:string):Promise<main.PeijianResult>;
@@ -24,6 +28,8 @@ export function RunPizhiProcess(arg1:string):Promise<main.PizhiResult>;
 
 export function SaveDangkouConfigPath(arg1:string):Promise<void>;
 
+export function SaveDatuConfigPath(arg1:string):Promise<void>;
+
 export function SaveFilterConfig(arg1:main.FilterConfig):Promise<void>;
 
 export function SavePeijianConfigPath(arg1:string):Promise<void>;
@@ -31,6 +37,8 @@ export function SavePeijianConfigPath(arg1:string):Promise<void>;
 export function SavePizhiConfigPath(arg1:string):Promise<void>;
 
 export function SelectDangkouConfigFile():Promise<string>;
+
+export function SelectDatuConfigFile():Promise<string>;
 
 export function SelectFile():Promise<string>;
 

@@ -12,6 +12,7 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"taobao/internal/dangkou"
+	"taobao/internal/datu"
 	"taobao/internal/filter"
 	"taobao/internal/logger"
 	"taobao/internal/peijian"
@@ -175,6 +176,43 @@ func (a *App) SelectPizhiConfigFile() (string, error) {
 	return path, nil
 }
 
+// ---- 打图配置管理 ----
+
+// GetDatuConfigPath 获取已保存的打图工厂配置文件路径
+func (a *App) GetDatuConfigPath() string {
+	return datu.LoadConfigPath()
+}
+
+// SaveDatuConfigPath 保存打图工厂配置文件路径（先校验文件格式）
+func (a *App) SaveDatuConfigPath(path string) error {
+	if path == "" {
+		return fmt.Errorf("打图工厂配置文件路径不能为空")
+	}
+	if _, err := datu.LoadEngine(path); err != nil {
+		return fmt.Errorf("打图工厂配置文件格式错误: %w", err)
+	}
+	logger.Info("保存打图工厂配置路径: %s", path)
+	return datu.SaveConfigPath(path)
+}
+
+// SelectDatuConfigFile 打开文件选择对话框选择打图工厂配置表.xlsx，校验通过后自动保存
+func (a *App) SelectDatuConfigFile() (string, error) {
+	path, err := wailsRuntime.OpenFileDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+		Title: "选择打图工厂配置 Excel 文件",
+		Filters: []wailsRuntime.FileFilter{
+			{DisplayName: "Excel文件 (*.xlsx)", Pattern: "*.xlsx"},
+			{DisplayName: "所有文件 (*.*)", Pattern: "*.*"},
+		},
+	})
+	if err != nil || path == "" {
+		return "", nil
+	}
+	if err := a.SaveDatuConfigPath(path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 // ---- 处理结果 ----
 
 // FilterResult 筛选结果
@@ -212,6 +250,15 @@ type PizhiResult struct {
 	Unmatched     int               `json:"unmatched"`     // 未匹配订单数
 	Total         int               `json:"total"`
 	OutputPath    string            `json:"outputPath"`
+}
+
+// DatuResult 打图分配结果
+type DatuResult struct {
+	Success        bool           `json:"success"`
+	Error          string         `json:"error,omitempty"`
+	FactorySummary map[string]int `json:"factorySummary"` // 工厂名 → 型号聚合行数
+	Total          int            `json:"total"`
+	OutputPath     string         `json:"outputPath"`
 }
 
 // ---- 工具方法 ----
@@ -300,6 +347,31 @@ func (a *App) RunPizhiProcess(filePath string) PizhiResult {
 		Unmatched:    len(result.Unmatched),
 		Total:        result.Total,
 		OutputPath:   result.OutputPath,
+	}
+}
+
+// RunDatuProcess 执行打图分配
+func (a *App) RunDatuProcess(filePath string) DatuResult {
+	logger.Info("开始打图分配: %s", filePath)
+	configPath := a.GetDatuConfigPath()
+	if configPath == "" {
+		return DatuResult{Success: false, Error: "请先配置打图工厂文件（点击打图旁的⚙按钮）"}
+	}
+	result, err := datu.Process(filePath, configPath)
+	if err != nil {
+		logger.Error("打图分配失败: %v", err)
+		return DatuResult{Success: false, Error: err.Error()}
+	}
+	factorySummary := make(map[string]int)
+	for factory, rows := range result.FactoryAggregates {
+		factorySummary[factory] = len(rows)
+	}
+	logger.Info("打图分配完成: %v, 总订单=%d", factorySummary, result.Total)
+	return DatuResult{
+		Success:        true,
+		FactorySummary: factorySummary,
+		Total:          result.Total,
+		OutputPath:     result.OutputPath,
 	}
 }
 

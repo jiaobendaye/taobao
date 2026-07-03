@@ -6,6 +6,10 @@ export function GetDangkouConfigPath() {
   return window['go']['main']['App']['GetDangkouConfigPath']();
 }
 
+export function GetDatuConfigPath() {
+  return window['go']['main']['App']['GetDatuConfigPath']();
+}
+
 export function GetFilterConfig() {
   return window['go']['main']['App']['GetFilterConfig']();
 }
@@ -30,6 +34,10 @@ export function RunDangkou(arg1) {
   return window['go']['main']['App']['RunDangkou'](arg1);
 }
 
+export function RunDatuProcess(arg1) {
+  return window['go']['main']['App']['RunDatuProcess'](arg1);
+}
+
 export function RunFilter(arg1) {
   return window['go']['main']['App']['RunFilter'](arg1);
 }
@@ -46,6 +54,10 @@ export function SaveDangkouConfigPath(arg1) {
   return window['go']['main']['App']['SaveDangkouConfigPath'](arg1);
 }
 
+export function SaveDatuConfigPath(arg1) {
+  return window['go']['main']['App']['SaveDatuConfigPath'](arg1);
+}
+
 export function SaveFilterConfig(arg1) {
   return window['go']['main']['App']['SaveFilterConfig'](arg1);
 }
@@ -60,6 +72,10 @@ export function SavePizhiConfigPath(arg1) {
 
 export function SelectDangkouConfigFile() {
   return window['go']['main']['App']['SelectDangkouConfigFile']();
+}
+
+export function SelectDatuConfigFile() {
+  return window['go']['main']['App']['SelectDatuConfigFile']();
 }
 
 export function SelectFile() {

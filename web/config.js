@@ -30,4 +30,8 @@ const Config = {
   // ---- Dangkou/Peijian config (large, memory only) ----
   // These are stored in memory via state.dangkouEngine / state.peijianEngine
   // and lost on page reload (user re-uploads config file)
+
+  // ---- Datu config: small enough for localStorage ----
+  getDatuConfig() { return this._get('datu'); },
+  setDatuConfig(cfg) { this._set('datu', cfg); },
 };

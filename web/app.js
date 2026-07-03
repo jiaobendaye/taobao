@@ -7,6 +7,8 @@ const state = {
   dangkouConfigName: '',
   peijianEngine: null,  // { mapping, stalls, stallOrder }
   peijianConfigName: '',
+  datuEngine: null,     // { factoryByProductID, factories }
+  datuConfigName: '',
 };
 
 // ---- Filter ----
@@ -314,4 +316,90 @@ async function loadPeijianConfig(file) {
   state.peijianEngine = cfg;
   state.peijianConfigName = `${file.name} (${cfg.stallOrder ? cfg.stallOrder.join(', ') : ''})`;
   UI.setConfigPath('peijian-config-path', state.peijianConfigName);
+}
+
+// ---- Datu: parse config + run ----
+// 打图工厂配置表格式：唯一 sheet「打图工厂编码」, 每列 = 一个工厂(列头=工厂名), 列下方单元格 = 商品ID
+async function parseDatuConfigSheet(sheets, sheetNames) {
+  // 跳过 WpsReserved* sheet
+  const validNames = sheetNames.filter(n => !n.startsWith('WpsReserved'));
+  if (validNames.length === 0) throw new Error('配置文件中没有有效 sheet');
+  const sheet = sheets[validNames[0]];
+  if (!sheet || sheet.length < 1) throw new Error('打图工厂配置文件为空');
+  const headerRow = sheet[0];
+
+  const factoryByProductID = {};
+  const factories = [];
+  const seenFactories = new Set();
+
+  for (let col = 0; col < headerRow.length; col++) {
+    const factoryName = String(headerRow[col] || '').trim();
+    if (!factoryName) continue;
+    if (!seenFactories.has(factoryName)) {
+      seenFactories.add(factoryName);
+      factories.push(factoryName);
+    }
+    // 该列下方行 = 商品ID
+    for (let row = 1; row < sheet.length; row++) {
+      const pid = String(sheet[row]?.[col] || '').trim();
+      if (pid) factoryByProductID[pid.toLowerCase()] = factoryName;
+    }
+  }
+
+  if (factories.length === 0) throw new Error('未识别到任何工厂');
+  if (Object.keys(factoryByProductID).length === 0) throw new Error('未识别到任何商品ID');
+  return { factoryByProductID, factories };
+}
+
+async function loadDatuConfig(file) {
+  const sheets = await Excel.readAllSheets(file);
+  const sheetNames = Object.keys(sheets);
+  const cfg = await parseDatuConfigSheet(sheets, sheetNames);
+  state.datuEngine = cfg;
+  state.datuConfigName = `${file.name} (${cfg.factories.join(', ')})`;
+  UI.setConfigPath('datu-config-path', state.datuConfigName);
+  // 缓存到 localStorage（配置小）
+  Config.setDatuConfig(cfg);
+}
+
+async function runDatu() {
+  if (!state.orderFile) { UI.showError('datu', '请先选择订单 Excel 文件'); return; }
+  if (!state.datuEngine) { UI.showError('datu', '请先上传打图工厂配置文件（点击齿轮按钮）'); return; }
+  UI.setProcessing('datu', true);
+  UI.showSpinner('datu');
+  UI.showResult('datu', null, null);
+  try {
+    const { headers, rows } = await Excel.read(state.orderFile);
+    const engine = {
+      factoryByProductID: state.datuEngine.factoryByProductID,
+      factories: state.datuEngine.factories,
+    };
+    const data = WasmBridge.datuProcess(rows, headers, engine);
+
+    const factoryAggregates = data.factoryAggregates || {};
+    const summary = {};
+    for (const factory of state.datuEngine.factories) {
+      if (factoryAggregates[factory] && factoryAggregates[factory].length) {
+        summary[factory] = factoryAggregates[factory].length;
+      }
+    }
+    summary['总订单'] = data.total || 0;
+
+    const outputHeaders = ['编码', '手机型号', '素材', '数量', '姓名'];
+    const sheets = [];
+    for (const factory of state.datuEngine.factories) {
+      const agg = factoryAggregates[factory];
+      if (!agg || !agg.length) continue;
+      const outRows = agg.map(r => [r.code || '', r.model || '', r.material || '', r.quantity || 0, r.name || '凡凡']);
+      sheets.push({ name: factory, headers: outputHeaders, rows: outRows });
+    }
+
+    const baseName = state.orderFile.name.replace(/\.xlsx$/i, '');
+    UI.showResult('datu', summary, () => Excel.download(sheets, baseName + '_打图结果.xlsx'), '📥 下载' + baseName + '_打图结果.xlsx');
+  } catch (e) {
+    UI.showError('datu', e.message);
+  } finally {
+    UI.setProcessing('datu', false);
+    UI.hideSpinner('datu');
+  }
 }
