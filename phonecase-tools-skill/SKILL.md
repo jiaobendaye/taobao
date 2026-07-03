@@ -14,7 +14,7 @@ description: Use the phonecase-tools CLI to process Taobao phone case order Exce
 - **无参数启动** → 桌面 GUI 模式（Wails WebView）
 - **带子命令启动** → CLI 模式
 
-当前 CLI 提供 **四个** 子命令：
+当前 CLI 提供 **五个** 子命令：
 
 | 子命令 | 作用 |
 |--------|------|
@@ -22,6 +22,7 @@ description: Use the phonecase-tools CLI to process Taobao phone case order Exce
 | `dangkou`| 按自设编码把订单分配到各档口 |
 | `peijian`| 从订单中提取配件并分配到档口 |
 | `pizhi`  | 皮质壳按 (商品ID, SKU, 型号) 聚合并附带图片输出 |
+| `datu`   | 订单按打图工厂配置聚合并分配到各工厂 |
 
 > ⚠ **不要** 不带参数运行二进制 — 这会启动 GUI 桌面应用而不是 CLI。
 
@@ -340,6 +341,91 @@ phonecase-tools pizhi <订单Excel文件> <皮质壳配置表.xlsx>
 
 ---
 
+## 5. `datu` — 打图工厂分配（NEW）
+
+**作用**：把订单按 `打图工厂配置表.xlsx` 分配到各打图工厂，按 (工厂, 编码, 手机型号, 素材) **聚合数量**。
+
+### 用法
+
+```bash
+phonecase-tools datu <订单Excel文件> <打图工厂配置表.xlsx>
+# 例
+./build/bin/phonecase-tools datu /abs/订单.xlsx /abs/打图工厂配置表.xlsx
+```
+
+> ⚠ **CLI 模式必须显式传入配置表路径**，不会从 `datu_config.json` 读取；该 JSON 文件仅供 GUI 模式下使用。
+
+### 打图工厂配置表 Excel 格式
+
+- **唯一 Sheet**「打图工厂编码」（会自动跳过 `WpsReserved` 开头的内部 sheet）
+- **列式布局**：每列一个工厂（列头 = 工厂名），优先级按列顺序
+- 列下方行：该工厂支持的**商品 ID 列表**（一行一个）
+- 商品ID 用 `GetCellValue` 读取避免科学计数法
+
+示例：
+
+| 工厂A | 工厂B | 工厂C |
+|-------|-------|-------|
+| 123456| 654321| 111111|
+| 123457| 654322| 111112|
+| 123458|       |       |
+
+### 订单必需列
+
+`商品id`、`商品规格`、`商品规格商家编码`、`商品数量`。
+
+商品规格格式：`{手机型号}|...` — 例：`iPhone 15 Pro|...`  
+商品规格商家编码格式：`【素材-编码】` — 例：`【DYT彩银白色-DTY7958】`
+
+解析后：
+- 手机型号 = `iPhone15Pro`（去掉空格，忽略末尾 `[...]` / `【...】` 后缀）
+- 素材 = `DYT彩银白色`（从 `【...】` 中提取 `-` 前的部分）
+- 编码 = `DTY7958`（从 `【...】` 中提取 `-` 后的部分）
+- 若不符合格式（例仅 `【PH皮质】`），素材和编码均为空
+
+### 聚合流程
+
+```
+订单行
+  → 商品ID  →  查配置表 → 工厂名
+  → 规格解析 →  手机型号 + SKU
+  → 【素材-编码】解析 → 素材 + 编码
+  → 按 (工厂, 编码, 型号, 素材) 聚合数量
+  → 输出对应 Sheet：[编码, 型号, 素材, 数量, 姓名]
+```
+
+商品ID 未在配置表中的订单**静默跳过**（不出现在输出）。
+
+### 输出
+
+`/abs/path/to/订单_output/打图结果.xlsx`
+
+- 每个工厂一个 Sheet，**仅输出有数据的工厂**
+- 表头：`编码 | 型号 | 素材 | 数量 | 姓名`
+- 姓名列固定值 `凡凡`
+
+### CLI 输出示例
+
+```
+已生成 /abs/path/to/订单_output/打图结果.xlsx
+  总订单: 100条
+  工厂A: 15 个型号
+  工厂B: 12 个型号
+  工厂C: 8 个型号
+```
+
+### 配置：`datu_config.json`（仅 GUI 使用）
+
+```json
+{ "path": "/abs/path/to/打图工厂配置表.xlsx" }
+```
+
+调整方式：
+- **CLI**：直接传第二个参数，无需（也不能）通过此 JSON 配置
+- **GUI**：点击「打图工厂分配」旁的 ⚙ → 弹出文件选择对话框
+
+---
+
 ## 独立调用
 
 四个子命令**完全独立**，没有强制顺序或依赖关系。每个命令接收一份订单 Excel +（可选的）配置 Excel，输出一份结果 Excel 到 `<输入名>_output/`。
@@ -360,9 +446,14 @@ phonecase-tools pizhi <订单Excel文件> <皮质壳配置表.xlsx>
 
 # 皮质壳分配 —— 需要「皮质壳配置表」配置
 ./build/bin/phonecase-tools pizhi  /abs/订单.xlsx /abs/皮质壳配置表.xlsx
+
+# 打图工厂分配 —— 需要「打图工厂配置表」配置
+./build/bin/phonecase-tools datu   /abs/订单.xlsx /abs/打图工厂配置表.xlsx
 ```
 
 每个 `<订单.xlsx>` 可以是任意一个订单文件，没有「必须先 filter 才能 dangkou」这种前置关系。
+
+五个子命令完全独立，按需组合选用。
 
 ---
 
@@ -401,6 +492,7 @@ go test ./...                          # 全部
 go test ./internal/dangkou/ -v         # 档口
 go test ./internal/peijian/ -v         # 配件
 go test ./internal/pizhi/   -v         # 皮质壳
+go test ./internal/datu/    -v         # 打图工厂
 ```
 
 修改源码后**必须重新编译**才能用 CLI 测试新版。
@@ -410,9 +502,9 @@ go test ./internal/pizhi/   -v         # 皮质壳
 ## 重要规则
 
 1. **始终用绝对路径**调用 CLI，避免工作目录变化导致找不到输入文件。
-2. **四个子命令互相独立**：`filter` / `dangkou` / `peijian` / `pizhi` 没有前后依赖关系，输入文件来源不限。
-3. **CLI 必须显式传配置表路径**：`dangkou` / `peijian` / `pizhi` 的第二个参数是**必填**的，CLI 不会读取 `*_config.json`；这些 JSON 文件**仅供 GUI 持久化**上次选择的路径。
+2. **五个子命令互相独立**：`filter` / `dangkou` / `peijian` / `pizhi` / `datu` 没有前后依赖关系，输入文件来源不限。
+3. **CLI 必须显式传配置表路径**：`dangkou` / `peijian` / `pizhi` / `datu` 的第二个参数是**必填**的，CLI 不会读取 `*_config.json`；这些 JSON 文件**仅供 GUI 持久化**上次选择的路径。
 4. **`peijian` 对数量严格匹配**：配件段数 ≠ 编码列数会直接报错 — 修改 `配件编码.xlsx` 时务必保持一致。
 5. **`pizhi` 的图片读取**：配置表 C 列必须真有嵌入图片（不能只是文字），否则该行的图片列会空白。
 6. **不要不带参数运行二进制**，否则会启动 GUI 桌面应用而不是 CLI。
-7. **GUI 中通过 Wails 绑定暴露的后端方法**（`window.go.main.App.*`）：`RunFilter` / `RunDangkou` / `RunPeijianProcess` / `RunPizhiProcess` / `GetXxxConfigPath` / `SaveXxxConfigPath` / `SelectXxxConfigFile` 等。
+7. **GUI 中通过 Wails 绑定暴露的后端方法**（`window.go.main.App.*`）：`RunFilter` / `RunDangkou` / `RunPeijianProcess` / `RunPizhiProcess` / `RunDatuProcess` / `GetXxxConfigPath` / `SaveXxxConfigPath` / `SelectXxxConfigFile` 等。
