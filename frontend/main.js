@@ -350,7 +350,7 @@ async function runDatu() {
         var html = '';
         var sm = r.factorySummary || {};
         for (var k in sm) {
-            html += card(sm[k], k + ' (型号数)');
+            html += card(sm[k], k + ' (记录数)');
         }
         html += card(r.total, '总订单');
         resultStats.innerHTML = html;

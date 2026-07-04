@@ -376,21 +376,24 @@ async function runDatu() {
     };
     const data = WasmBridge.datuProcess(rows, headers, engine);
 
-    const factoryAggregates = data.factoryAggregates || {};
+    const factoryOrders = data.factoryOrders || {};
     const summary = {};
     for (const factory of state.datuEngine.factories) {
-      if (factoryAggregates[factory] && factoryAggregates[factory].length) {
-        summary[factory] = factoryAggregates[factory].length;
+      if (factoryOrders[factory] && factoryOrders[factory].length) {
+        summary[factory] = factoryOrders[factory].length;
       }
     }
     summary['总订单'] = data.total || 0;
 
-    const outputHeaders = ['编码', '手机型号', '素材', '数量', '姓名'];
+    const outputHeaders = ['编码', '手机型号', '素材', '数量', '姓名', '付款时间'];
     const sheets = [];
     for (const factory of state.datuEngine.factories) {
-      const agg = factoryAggregates[factory];
-      if (!agg || !agg.length) continue;
-      const outRows = agg.map(r => [r.code || '', r.model || '', r.material || '', r.quantity || 0, r.name || '凡凡']);
+      const orders = factoryOrders[factory];
+      if (!orders || !orders.length) continue;
+      const outRows = orders.map(r => [
+        r.code || '', r.model || '', r.material || '',
+        r.quantity || 0, r.name || '凡凡', r.paymentTime || ''
+      ]);
       sheets.push({ name: factory, headers: outputHeaders, rows: outRows });
     }
 

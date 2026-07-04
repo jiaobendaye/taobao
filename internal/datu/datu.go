@@ -29,20 +29,21 @@ type Engine struct {
 	Factories          []string          `json:"factories"`          // 按配置表列顺序排列的工厂名
 }
 
-// AggregateRow 单条 (工厂, 编码, 型号, 素材) 聚合行
-type AggregateRow struct {
-	Code     string `json:"code"`     // 编码（解析自 【素材-编码】）
-	Model    string `json:"model"`    // 手机型号
-	Material string `json:"material"` // 素材
-	Quantity int    `json:"quantity"` // 数量合计
-	Name     string `json:"name"`     // 姓名（固定 凡凡）
+// OutputRow 单条订单的输出行（一行一订单，不聚合）
+type OutputRow struct {
+	Code        string `json:"code"`        // 编码（解析自 【素材-编码】）
+	Model       string `json:"model"`       // 手机型号
+	Material    string `json:"material"`    // 素材
+	Quantity    int    `json:"quantity"`    // 单订单数量（不累加）
+	Name        string `json:"name"`        // 姓名（固定 凡凡）
+	PaymentTime string `json:"paymentTime"` // 付款时间（订单原值透传，列缺失时为空字符串）
 }
 
 // Result 处理结果
 type Result struct {
-	FactoryAggregates map[string][]AggregateRow `json:"factoryAggregates"` // 工厂名 → 聚合行
-	OutputPath        string                    `json:"outputPath"`
-	Total             int                       `json:"total"` // 成功聚合的订单行数（未跳过）
+	FactoryOrders map[string][]OutputRow `json:"factoryOrders"` // 工厂名 → 订单行列表（一行一订单）
+	OutputPath    string                 `json:"outputPath"`
+	Total         int                    `json:"total"` // 输出行总数（匹配后）
 }
 
 // ---- 引擎加载 ----
@@ -230,7 +231,7 @@ func Process(filename, configPath string) (*Result, error) {
 
 // ProcessData 对已解析的订单数据执行打图分配，不涉及文件 I/O。
 //
-// 聚合键：(工厂, 编码, 手机型号, 素材) 四元组完全相同的订单合并数量。
+// 每个匹配订单输出 1 行（不再按 (工厂, 编码, 型号, 素材) 聚合）。
 // 编码/素材可为空（不匹配 【素材-编码】 格式时）。
 // 商品 ID 不在 Engine 中的订单静默跳过。
 func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result {
@@ -238,20 +239,12 @@ func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result 
 	colSpec := common.FindColumn(headers, "商品规格")
 	colDatuCode := common.FindColumn(headers, "商品规格商家编码")
 	colQty := common.FindColumn(headers, "商品数量")
+	colPayTime := common.FindColumn(headers, "付款时间")
 
 	result := &Result{
-		FactoryAggregates: make(map[string][]AggregateRow),
-		Total:             len(dataRows),
+		FactoryOrders: make(map[string][]OutputRow),
+		Total:         0,
 	}
-
-	type aggKey struct {
-		Factory  string
-		Code     string
-		Model    string
-		Material string
-	}
-	aggMap := make(map[aggKey]*AggregateRow)
-	aggOrder := []aggKey{}
 
 	for _, row := range dataRows {
 		productID := ""
@@ -281,28 +274,28 @@ func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result 
 			qty = parseQty(row[colQty])
 		}
 
-		key := aggKey{Factory: factory, Code: code, Model: model, Material: material}
-		if existing, exists := aggMap[key]; exists {
-			existing.Quantity += qty
-		} else {
-			aggMap[key] = &AggregateRow{
-				Code:     code,
-				Model:    model,
-				Material: material,
-				Quantity: qty,
-				Name:     DefaultName,
-			}
-			aggOrder = append(aggOrder, key)
-		}
-	}
+		payTime := readPaymentTime(row, colPayTime)
 
-	// 按工厂分组，保持 Engine.Factories 顺序
-	for _, key := range aggOrder {
-		row := aggMap[key]
-		result.FactoryAggregates[key.Factory] = append(result.FactoryAggregates[key.Factory], *row)
+		result.FactoryOrders[factory] = append(result.FactoryOrders[factory], OutputRow{
+			Code:        code,
+			Model:       model,
+			Material:    material,
+			Quantity:    qty,
+			Name:        DefaultName,
+			PaymentTime: payTime,
+		})
+		result.Total++
 	}
 
 	return result
+}
+
+// readPaymentTime 读取付款时间；列缺失或单元格为空时返回空字符串。
+func readPaymentTime(row []string, colIdx int) string {
+	if colIdx < 0 || colIdx >= len(row) {
+		return ""
+	}
+	return strings.TrimSpace(row[colIdx])
 }
 
 func parseQty(s string) int {
@@ -328,14 +321,14 @@ func writeOutput(outputPath string, engine *Engine, result *Result) error {
 
 	firstWritten := false
 	for _, factoryName := range engine.Factories {
-		rows, ok := result.FactoryAggregates[factoryName]
+		rows, ok := result.FactoryOrders[factoryName]
 		if !ok || len(rows) == 0 {
 			continue
 		}
 
-		// 按素材排序
-		sort.Slice(rows, func(i, j int) bool {
-			return rows[i].Material < rows[j].Material
+		// 按付款时间升序排序
+		sort.SliceStable(rows, func(i, j int) bool {
+			return rows[i].PaymentTime < rows[j].PaymentTime
 		})
 
 		sheetName := factoryName
@@ -357,9 +350,9 @@ func writeOutput(outputPath string, engine *Engine, result *Result) error {
 	return out.SaveAs(outputPath)
 }
 
-// writeFactorySheet 写单个工厂 sheet：表头 [序号, 编码, 手机型号, 素材, 数量, 姓名]
-func writeFactorySheet(out *excelize.File, sheetName string, rows []AggregateRow) {
-	headers := []string{"序号", "编码", "手机型号", "素材", "数量", "姓名"}
+// writeFactorySheet 写单个工厂 sheet：表头 [序号, 编码, 手机型号, 素材, 数量, 姓名, 付款时间]
+func writeFactorySheet(out *excelize.File, sheetName string, rows []OutputRow) {
+	headers := []string{"序号", "编码", "手机型号", "素材", "数量", "姓名", "付款时间"}
 	for colIdx, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(colIdx+1, 1)
 		_ = out.SetCellValue(sheetName, cell, h)
@@ -373,6 +366,7 @@ func writeFactorySheet(out *excelize.File, sheetName string, rows []AggregateRow
 		_ = out.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), r.Material)
 		_ = out.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), r.Quantity)
 		_ = out.SetCellValue(sheetName, fmt.Sprintf("F%d", rowNum), r.Name)
+		_ = out.SetCellValue(sheetName, fmt.Sprintf("G%d", rowNum), r.PaymentTime)
 	}
 }
 

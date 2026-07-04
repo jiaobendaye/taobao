@@ -140,8 +140,8 @@ func runCLI() {
 		}
 		fmt.Printf("已生成 %s\n", result.OutputPath)
 		fmt.Printf("  总订单: %d条\n", result.Total)
-		for factory, rows := range result.FactoryAggregates {
-			fmt.Printf("  %s: %d 个型号\n", factory, len(rows))
+		for factory, rows := range result.FactoryOrders {
+			fmt.Printf("  %s: %d 条记录\n", factory, len(rows))
 		}
 
 	default:

@@ -11,10 +11,10 @@ import (
 
 func TestParseDatuCode(t *testing.T) {
 	tests := []struct {
-		name            string
-		input           string
-		wantMaterial    string
-		wantCode        string
+		name         string
+		input        string
+		wantMaterial string
+		wantCode     string
 	}{
 		{"标准格式带连字符", "【DYT彩银白色-DTY7958】", "DYT彩银白色", "DTY7958"},
 		{"无连字符", "【DTY彩银白色DTY7958】", "", ""},
@@ -38,7 +38,7 @@ func TestParseDatuCode(t *testing.T) {
 	}
 }
 
-// ---- ProcessData 聚合 ----
+// ---- ProcessData 明细行（一行一订单, 不聚合） ----
 
 func newEngine() *Engine {
 	return &Engine{
@@ -52,76 +52,71 @@ func newEngine() *Engine {
 	}
 }
 
-func TestProcessData_Aggregate(t *testing.T) {
+func TestProcessData_OneRowPerOrder_NoAggregation(t *testing.T) {
 	engine := newEngine()
-	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量"}
+	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量", "付款时间"}
 	rows := [][]string{
-		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "1"},
-		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "2"},
-		{"1053838905482", "华为 Mate 60 Pro|薄荷海", "【DYT彩银白色-DTY7958】", "3"},
+		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "1", "2026-06-28 10:56:42"},
+		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "2", "2026-06-28 11:00:00"},
+		{"1053838905482", "华为 Mate 60 Pro|薄荷海", "【DYT彩银白色-DTY7958】", "3", "2026-06-28 11:05:00"},
 	}
 	result := ProcessData(rows, headers, engine)
-	got := result.FactoryAggregates["打图工厂1"]
-	if len(got) != 2 {
-		t.Fatalf("rows = %d, want 2", len(got))
+	got := result.FactoryOrders["打图工厂1"]
+	// 不聚合: 3 订单 → 3 行
+	if len(got) != 3 {
+		t.Fatalf("rows = %d, want 3 (一行一订单, 不聚合)", len(got))
 	}
-	// 找 小米14 那行
-	var xiaomiRow *AggregateRow
-	for i := range got {
-		if got[i].Model == "小米14" {
-			xiaomiRow = &got[i]
+	// Total 等于输出行数
+	if result.Total != 3 {
+		t.Errorf("Total = %d, want 3", result.Total)
+	}
+	// 验证每行的 Quantity 没有累加
+	for _, r := range got {
+		if r.Quantity == 6 || r.Quantity == 5 {
+			t.Errorf("Quantity 不应累加: %d", r.Quantity)
 		}
 	}
-	if xiaomiRow == nil {
-		t.Fatal("未找到 小米14 行")
+}
+
+func TestProcessData_DifferentCodeMultipleRows(t *testing.T) {
+	engine := newEngine()
+	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量", "付款时间"}
+	rows := [][]string{
+		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "1", "2026-06-28 10:00:00"},
+		{"1050879735957", "小米 14|薄荷海", "【DYT冰雾魔方透白-DTY7959】", "1", "2026-06-28 10:30:00"},
 	}
-	if xiaomiRow.Quantity != 3 {
-		t.Errorf("数量 = %d, want 3", xiaomiRow.Quantity)
+	result := ProcessData(rows, headers, engine)
+	got := result.FactoryOrders["打图工厂1"]
+	if len(got) != 2 {
+		t.Fatalf("rows = %d, want 2 (不同编码 → 不同行)", len(got))
 	}
-	if xiaomiRow.Code != "DTY7958" || xiaomiRow.Material != "DYT彩银白色" {
-		t.Errorf("编码/素材 = (%q,%q), want (DTY7958,DYT彩银白色)", xiaomiRow.Code, xiaomiRow.Material)
-	}
-	if xiaomiRow.Name != DefaultName {
-		t.Errorf("姓名 = %q, want %q", xiaomiRow.Name, DefaultName)
+	if got[0].Code != "DTY7958" || got[1].Code != "DTY7959" {
+		t.Errorf("编码顺序错乱")
 	}
 }
 
-func TestProcessData_DifferentCodeSplits(t *testing.T) {
+func TestProcessData_DifferentMaterialMultipleRows(t *testing.T) {
 	engine := newEngine()
-	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量"}
+	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量", "付款时间"}
 	rows := [][]string{
-		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "1"},
-		{"1050879735957", "小米 14|薄荷海", "【DYT冰雾魔方透白-DTY7959】", "1"},
+		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "1", "2026-06-28 10:00:00"},
+		{"1050879735957", "小米 14|薄荷海", "【DTY彩银白色-DTY7958】", "1", "2026-06-28 11:00:00"},
 	}
 	result := ProcessData(rows, headers, engine)
-	got := result.FactoryAggregates["打图工厂1"]
+	got := result.FactoryOrders["打图工厂1"]
 	if len(got) != 2 {
-		t.Fatalf("rows = %d, want 2 (不同编码应拆行)", len(got))
-	}
-}
-
-func TestProcessData_DifferentMaterialSplits(t *testing.T) {
-	engine := newEngine()
-	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量"}
-	rows := [][]string{
-		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "1"},
-		{"1050879735957", "小米 14|薄荷海", "【DTY彩银白色-DTY7958】", "1"},
-	}
-	result := ProcessData(rows, headers, engine)
-	got := result.FactoryAggregates["打图工厂1"]
-	if len(got) != 2 {
-		t.Fatalf("rows = %d, want 2 (不同素材应拆行)", len(got))
+		t.Fatalf("rows = %d, want 2 (不同素材 → 不同行)", len(got))
 	}
 }
 
 func TestProcessData_UnmatchedCodeProducesEmptyFields(t *testing.T) {
 	engine := newEngine()
-	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量"}
+	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量", "付款时间"}
 	rows := [][]string{
-		{"1050879735957", "小米 14|薄荷海", "【PH皮质】", "1"}, // 无连字符
+		{"1050879735957", "小米 14|薄荷海", "【PH皮质】", "1", "2026-06-28 10:56:42"},
 	}
 	result := ProcessData(rows, headers, engine)
-	got := result.FactoryAggregates["打图工厂1"]
+	got := result.FactoryOrders["打图工厂1"]
 	if len(got) != 1 {
 		t.Fatalf("rows = %d, want 1", len(got))
 	}
@@ -131,19 +126,25 @@ func TestProcessData_UnmatchedCodeProducesEmptyFields(t *testing.T) {
 	if got[0].Model != "小米14" {
 		t.Errorf("手机型号 = %q, want 小米14", got[0].Model)
 	}
+	if got[0].PaymentTime != "2026-06-28 10:56:42" {
+		t.Errorf("PaymentTime = %q, want %q", got[0].PaymentTime, "2026-06-28 10:56:42")
+	}
 }
 
 func TestProcessData_SkipNonDatuOrders(t *testing.T) {
 	engine := newEngine()
-	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量"}
+	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量", "付款时间"}
 	rows := [][]string{
-		{"999999999999", "iPhone 15|某SKU", "【PH仓-皮质硬壳】", "1"}, // 不在 Engine
-		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "1"},
+		{"999999999999", "iPhone 15|某SKU", "【PH仓-皮质硬壳】", "1", "2026-06-28 12:00:00"}, // 不在 Engine
+		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "1", "2026-06-28 12:30:00"},
 	}
 	result := ProcessData(rows, headers, engine)
-	got := result.FactoryAggregates["打图工厂1"]
+	got := result.FactoryOrders["打图工厂1"]
 	if len(got) != 1 {
 		t.Fatalf("rows = %d, want 1 (非打图订单应跳过)", len(got))
+	}
+	if result.Total != 1 {
+		t.Errorf("Total = %d, want 1 (只算匹配订单)", result.Total)
 	}
 }
 
@@ -155,31 +156,31 @@ func TestProcessData_MultipleFactories(t *testing.T) {
 		},
 		Factories: []string{"打图工厂1", "打图工厂2"},
 	}
-	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量"}
+	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量", "付款时间"}
 	rows := [][]string{
-		{"1111111111111", "iPhone15|A", "【X-001】", "2"},
-		{"2222222222222", "华为Pura70|B", "【Y-002】", "3"},
+		{"1111111111111", "iPhone15|A", "【X-001】", "2", "2026-06-28 10:00:00"},
+		{"2222222222222", "华为Pura70|B", "【Y-002】", "3", "2026-06-28 11:00:00"},
 	}
 	result := ProcessData(rows, headers, engine)
-	if len(result.FactoryAggregates["打图工厂1"]) != 1 {
-		t.Errorf("打图工厂1 rows = %d, want 1", len(result.FactoryAggregates["打图工厂1"]))
+	if len(result.FactoryOrders["打图工厂1"]) != 1 {
+		t.Errorf("打图工厂1 rows = %d, want 1", len(result.FactoryOrders["打图工厂1"]))
 	}
-	if len(result.FactoryAggregates["打图工厂2"]) != 1 {
-		t.Errorf("打图工厂2 rows = %d, want 1", len(result.FactoryAggregates["打图工厂2"]))
+	if len(result.FactoryOrders["打图工厂2"]) != 1 {
+		t.Errorf("打图工厂2 rows = %d, want 1", len(result.FactoryOrders["打图工厂2"]))
 	}
-	if result.FactoryAggregates["打图工厂1"][0].Quantity != 2 {
-		t.Errorf("打图工厂1 数量 = %d, want 2", result.FactoryAggregates["打图工厂1"][0].Quantity)
+	if result.FactoryOrders["打图工厂1"][0].Quantity != 2 {
+		t.Errorf("打图工厂1 数量 = %d, want 2", result.FactoryOrders["打图工厂1"][0].Quantity)
 	}
 }
 
 func TestProcessData_QuantityFallback(t *testing.T) {
 	engine := newEngine()
-	headers := []string{"商品id", "商品规格", "商品规格商家编码"} // 无商品数量列
+	headers := []string{"商品id", "商品规格", "商品规格商家编码", "付款时间"} // 无商品数量列
 	rows := [][]string{
-		{"1050879735957", "小米 14|薄荷海", "【X-001】"},
+		{"1050879735957", "小米 14|薄荷海", "【X-001】", "2026-06-28 10:00:00"},
 	}
 	result := ProcessData(rows, headers, engine)
-	got := result.FactoryAggregates["打图工厂1"]
+	got := result.FactoryOrders["打图工厂1"]
 	if len(got) != 1 {
 		t.Fatalf("rows = %d, want 1", len(got))
 	}
@@ -188,14 +189,63 @@ func TestProcessData_QuantityFallback(t *testing.T) {
 	}
 }
 
+// ---- 付款时间列 ----
+
+func TestProcessData_PaymentTimePassThrough(t *testing.T) {
+	engine := newEngine()
+	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量", "付款时间"}
+	rows := [][]string{
+		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "1", "2026-06-28 10:56:42"},
+		{"1053838905482", "华为 Mate 60 Pro|薄荷海", "【DYT彩银白色-DTY7958】", "1", "2026-06-28 11:00:00"},
+	}
+	result := ProcessData(rows, headers, engine)
+	got := result.FactoryOrders["打图工厂1"]
+	if len(got) != 2 {
+		t.Fatalf("rows = %d, want 2", len(got))
+	}
+	if got[0].PaymentTime != "2026-06-28 10:56:42" {
+		t.Errorf("PaymentTime[0] = %q, want %q", got[0].PaymentTime, "2026-06-28 10:56:42")
+	}
+	if got[1].PaymentTime != "2026-06-28 11:00:00" {
+		t.Errorf("PaymentTime[1] = %q, want %q", got[1].PaymentTime, "2026-06-28 11:00:00")
+	}
+}
+
+func TestProcessData_MissingPayTimeColumn(t *testing.T) {
+	engine := newEngine()
+	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量"} // 无 付款时间 列
+	rows := [][]string{
+		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "1"},
+	}
+	result := ProcessData(rows, headers, engine)
+	got := result.FactoryOrders["打图工厂1"]
+	if len(got) != 1 {
+		t.Fatalf("rows = %d, want 1", len(got))
+	}
+	if got[0].PaymentTime != "" {
+		t.Errorf("无 付款时间 列时 PaymentTime 应为空, got %q", got[0].PaymentTime)
+	}
+}
+
+func TestProcessData_NameIsFixed(t *testing.T) {
+	engine := newEngine()
+	headers := []string{"商品id", "商品规格", "商品规格商家编码"}
+	rows := [][]string{
+		{"1050879735957", "小米 14|薄荷海", "【X-001】"},
+	}
+	result := ProcessData(rows, headers, engine)
+	got := result.FactoryOrders["打图工厂1"]
+	if got[0].Name != DefaultName {
+		t.Errorf("Name = %q, want %q", got[0].Name, DefaultName)
+	}
+}
+
+// ---- Engine.LookupFactory ----
+
 func TestLookupFactory(t *testing.T) {
 	engine := newEngine()
 	if got := engine.LookupFactory("1050879735957"); got != "打图工厂1" {
 		t.Errorf("已知 ID = %q, want 打图工厂1", got)
-	}
-	// 大小写不敏感
-	if got := engine.LookupFactory("1050879735957"); got != "打图工厂1" {
-		t.Errorf("大小写不敏感失败: %q", got)
 	}
 	if got := engine.LookupFactory("999999999999"); got != "" {
 		t.Errorf("未知 ID 应返回空, got %q", got)
@@ -237,13 +287,13 @@ func TestLoadEngineAndProcess_RealFile(t *testing.T) {
 	if _, err := os.Stat(result.OutputPath); err != nil {
 		t.Errorf("输出文件不存在: %v", err)
 	}
-	t.Logf("输出: %s, 工厂数: %d, 聚合行数: %d",
-		result.OutputPath, len(result.FactoryAggregates), totalAggRows(result))
+	t.Logf("输出: %s, 工厂数: %d, 行数: %d",
+		result.OutputPath, len(result.FactoryOrders), totalOrders(result))
 }
 
-func totalAggRows(r *Result) int {
+func totalOrders(r *Result) int {
 	n := 0
-	for _, rows := range r.FactoryAggregates {
+	for _, rows := range r.FactoryOrders {
 		n += len(rows)
 	}
 	return n

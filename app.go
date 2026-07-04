@@ -363,7 +363,7 @@ func (a *App) RunDatuProcess(filePath string) DatuResult {
 		return DatuResult{Success: false, Error: err.Error()}
 	}
 	factorySummary := make(map[string]int)
-	for factory, rows := range result.FactoryAggregates {
+	for factory, rows := range result.FactoryOrders {
 		factorySummary[factory] = len(rows)
 	}
 	logger.Info("打图分配完成: %v, 总订单=%d", factorySummary, result.Total)
