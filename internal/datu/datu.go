@@ -37,6 +37,8 @@ type OutputRow struct {
 	Quantity    int    `json:"quantity"`    // 单订单数量（不累加）
 	Name        string `json:"name"`        // 姓名（固定 凡凡）
 	PaymentTime string `json:"paymentTime"` // 付款时间（订单原值透传，列缺失时为空字符串）
+	BuyerNote   string `json:"buyerNote"`   // 买家留言（订单原值透传，列缺失时为空字符串）
+	SellerNote  string `json:"sellerNote"`  // 卖家备注（订单原值透传，列缺失时为空字符串）
 }
 
 // Result 处理结果
@@ -240,6 +242,8 @@ func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result 
 	colDatuCode := common.FindColumn(headers, "商品规格商家编码")
 	colQty := common.FindColumn(headers, "商品数量")
 	colPayTime := common.FindColumn(headers, "付款时间")
+	colBuyerNote := common.FindColumn(headers, "买家留言")
+	colSellerNote := common.FindColumn(headers, "卖家备注")
 
 	result := &Result{
 		FactoryOrders: make(map[string][]OutputRow),
@@ -274,7 +278,9 @@ func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result 
 			qty = parseQty(row[colQty])
 		}
 
-		payTime := readPaymentTime(row, colPayTime)
+		payTime := readCell(row, colPayTime)
+		buyerNote := readCell(row, colBuyerNote)
+		sellerNote := readCell(row, colSellerNote)
 
 		result.FactoryOrders[factory] = append(result.FactoryOrders[factory], OutputRow{
 			Code:        code,
@@ -283,6 +289,8 @@ func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result 
 			Quantity:    qty,
 			Name:        DefaultName,
 			PaymentTime: payTime,
+			BuyerNote:   buyerNote,
+			SellerNote:  sellerNote,
 		})
 		result.Total++
 	}
@@ -290,8 +298,8 @@ func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result 
 	return result
 }
 
-// readPaymentTime 读取付款时间；列缺失或单元格为空时返回空字符串。
-func readPaymentTime(row []string, colIdx int) string {
+// readCell 读取指定列的单元格字符串值；列缺失或单元格为空时返回空字符串。
+func readCell(row []string, colIdx int) string {
 	if colIdx < 0 || colIdx >= len(row) {
 		return ""
 	}
@@ -350,9 +358,9 @@ func writeOutput(outputPath string, engine *Engine, result *Result) error {
 	return out.SaveAs(outputPath)
 }
 
-// writeFactorySheet 写单个工厂 sheet：表头 [序号, 编码, 手机型号, 素材, 数量, 姓名, 付款时间]
+// writeFactorySheet 写单个工厂 sheet：表头 [序号, 编码, 手机型号, 素材, 数量, 姓名, 付款时间, 买家留言, 卖家备注]
 func writeFactorySheet(out *excelize.File, sheetName string, rows []OutputRow) {
-	headers := []string{"序号", "编码", "手机型号", "素材", "数量", "姓名", "付款时间"}
+	headers := []string{"序号", "编码", "手机型号", "素材", "数量", "姓名", "付款时间", "买家留言", "卖家备注"}
 	for colIdx, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(colIdx+1, 1)
 		_ = out.SetCellValue(sheetName, cell, h)
@@ -367,6 +375,8 @@ func writeFactorySheet(out *excelize.File, sheetName string, rows []OutputRow) {
 		_ = out.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), r.Quantity)
 		_ = out.SetCellValue(sheetName, fmt.Sprintf("F%d", rowNum), r.Name)
 		_ = out.SetCellValue(sheetName, fmt.Sprintf("G%d", rowNum), r.PaymentTime)
+		_ = out.SetCellValue(sheetName, fmt.Sprintf("H%d", rowNum), r.BuyerNote)
+		_ = out.SetCellValue(sheetName, fmt.Sprintf("I%d", rowNum), r.SellerNote)
 	}
 }
 

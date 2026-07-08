@@ -6,3 +6,4 @@ dist/
 build/
 .claude/
 .playwright-mcp/
+docs/

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/xuri/excelize/v2"
 )
 
 // ---- ParseDatuCode ----
@@ -237,6 +239,103 @@ func TestProcessData_NameIsFixed(t *testing.T) {
 	got := result.FactoryOrders["打图工厂1"]
 	if got[0].Name != DefaultName {
 		t.Errorf("Name = %q, want %q", got[0].Name, DefaultName)
+	}
+}
+
+// ---- 买家留言 / 卖家备注 ----
+
+func TestProcessData_BuyerAndSellerNotesPassThrough(t *testing.T) {
+	engine := newEngine()
+	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量", "付款时间", "买家留言", "卖家备注"}
+	rows := [][]string{
+		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "1", "2026-06-28 10:00:00", "请尽快发货", "已通知仓库"},
+		{"1053838905482", "华为 Mate 60 Pro|薄荷海", "【DYT彩银白色-DTY7958】", "2", "2026-06-28 11:00:00", "", ""},
+	}
+	result := ProcessData(rows, headers, engine)
+	got := result.FactoryOrders["打图工厂1"]
+	if len(got) != 2 {
+		t.Fatalf("rows = %d, want 2", len(got))
+	}
+	if got[0].BuyerNote != "请尽快发货" {
+		t.Errorf("BuyerNote[0] = %q, want %q", got[0].BuyerNote, "请尽快发货")
+	}
+	if got[0].SellerNote != "已通知仓库" {
+		t.Errorf("SellerNote[0] = %q, want %q", got[0].SellerNote, "已通知仓库")
+	}
+	if got[1].BuyerNote != "" || got[1].SellerNote != "" {
+		t.Errorf("第二行备注应为空, got (%q,%q)", got[1].BuyerNote, got[1].SellerNote)
+	}
+}
+
+func TestProcessData_MissingNoteColumns(t *testing.T) {
+	engine := newEngine()
+	// 源文件无 买家留言 / 卖家备注 列
+	headers := []string{"商品id", "商品规格", "商品规格商家编码", "商品数量", "付款时间"}
+	rows := [][]string{
+		{"1050879735957", "小米 14|薄荷海", "【DYT彩银白色-DTY7958】", "1", "2026-06-28 10:00:00"},
+	}
+	result := ProcessData(rows, headers, engine)
+	got := result.FactoryOrders["打图工厂1"]
+	if len(got) != 1 {
+		t.Fatalf("rows = %d, want 1", len(got))
+	}
+	if got[0].BuyerNote != "" {
+		t.Errorf("无列时 BuyerNote 应为空, got %q", got[0].BuyerNote)
+	}
+	if got[0].SellerNote != "" {
+		t.Errorf("无列时 SellerNote 应为空, got %q", got[0].SellerNote)
+	}
+}
+
+func TestWriteFactorySheet_HeadersIncludeNotes(t *testing.T) {
+	// 端到端：写 Excel 后读回来，验证表头包含 买家留言、卖家备注 两列
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "test.xlsx")
+
+	engine := newEngine()
+	result := &Result{
+		FactoryOrders: map[string][]OutputRow{
+			"打图工厂1": {
+				{Code: "DTY7958", Model: "小米14", Material: "DYT彩银白色", Quantity: 1, Name: DefaultName, PaymentTime: "2026-06-28 10:00:00", BuyerNote: "留言A", SellerNote: "备注B"},
+			},
+		},
+	}
+	if err := writeOutput(outPath, engine, result); err != nil {
+		t.Fatalf("writeOutput 失败: %v", err)
+	}
+
+	f, err := excelize.OpenFile(outPath)
+	if err != nil {
+		t.Fatalf("打开输出文件失败: %v", err)
+	}
+	defer f.Close()
+
+	rows, err := f.GetRows("打图工厂1")
+	if err != nil {
+		t.Fatalf("读 sheet 失败: %v", err)
+	}
+	wantHeaders := []string{"序号", "编码", "手机型号", "素材", "数量", "姓名", "付款时间", "买家留言", "卖家备注"}
+	if len(rows) < 1 {
+		t.Fatal("输出 sheet 为空")
+	}
+	gotHeaders := rows[0]
+	if len(gotHeaders) != len(wantHeaders) {
+		t.Fatalf("表头列数 = %d, want %d (got=%v)", len(gotHeaders), len(wantHeaders), gotHeaders)
+	}
+	for i, h := range wantHeaders {
+		if gotHeaders[i] != h {
+			t.Errorf("表头[%d] = %q, want %q", i, gotHeaders[i], h)
+		}
+	}
+	// 第二行的 H、I 列应该是买家留言、卖家备注
+	if len(rows) < 2 {
+		t.Fatal("无数据行")
+	}
+	if rows[1][7] != "留言A" {
+		t.Errorf("买家留言列 = %q, want %q", rows[1][7], "留言A")
+	}
+	if rows[1][8] != "备注B" {
+		t.Errorf("卖家备注列 = %q, want %q", rows[1][8], "备注B")
 	}
 }
 
