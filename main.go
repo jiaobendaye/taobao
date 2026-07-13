@@ -148,10 +148,10 @@ func runCLI() {
 		fmt.Println("用法:")
 		fmt.Println("  phonecase-tools                       启动桌面应用")
 		fmt.Println("  phonecase-tools filter <Excel文件>    订单筛选")
-		fmt.Println("  phonecase-tools dangkou <订单Excel文件> [自设编码.xlsx]   档口分配")
-		fmt.Println("  phonecase-tools peijian <订单Excel文件> [配件编码.xlsx]  配件提取")
-		fmt.Println("  phonecase-tools pizhi <订单Excel文件> [皮质壳配置表.xlsx]  皮质壳分配")
-		fmt.Println("  phonecase-tools datu <订单Excel文件> [打图工厂配置表.xlsx]  打图分配")
+		fmt.Println("  phonecase-tools dangkou <订单Excel文件> <自设编码.xlsx>   档口分配")
+		fmt.Println("  phonecase-tools peijian <订单Excel文件> <配件编码.xlsx>  配件提取")
+		fmt.Println("  phonecase-tools pizhi <订单Excel文件> <皮质壳配置表.xlsx>  皮质壳分配")
+		fmt.Println("  phonecase-tools datu <订单Excel文件> <打图工厂配置表.xlsx>  打图分配")
 		os.Exit(1)
 	}
 }
