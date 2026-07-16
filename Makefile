@@ -1,4 +1,4 @@
-.PHONY: all linux windows clean wasm
+.PHONY: all linux windows clean wasm test test-go test-js
 
 APP_NAME  := phonecase-tools
 OUT_DIR   := build/bin
@@ -6,6 +6,17 @@ WAILS     := $(HOME)/go/bin/wails
 
 # 构建所有
 all: linux windows wasm
+
+# 测试
+test: test-go test-js
+
+test-go:
+	@echo "=== Go 测试 ==="
+	go test ./...
+
+test-js:
+	@echo "=== 前端(web) 测试 ==="
+	node --test web/*.test.js
 
 # CLI 已集成到主程序
 cli:

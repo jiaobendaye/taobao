@@ -5,7 +5,7 @@ const state = {
   orderFile: null,
   dangkouEngine: null,  // { mapping, stalls }
   dangkouConfigName: '',
-  peijianEngine: null,  // { mapping, stalls, stallOrder }
+  peijianEngine: null,  // { mapping, stalls, stallOrder, aliases }
   peijianConfigName: '',
   datuEngine: null,     // { factoryByProductID, factories }
   datuConfigName: '',
@@ -80,11 +80,32 @@ async function parsePeijianConfigSheet(sheets, sheetNames) {
   }
 
   // Sheet 2+: stall mapping (column layout, same format as dangkou)
+  // 排除「配件别名」sheet，单独解析为 别名→标准名 映射
+  const ALIAS_SHEET = '配件别名';
   const stalls = {};
   const stallOrder = [];
+  const aliases = {};
   for (let si = 1; si < sheetNames.length; si++) {
+    const sname = String(sheetNames[si] || '').trim();
     const s = sheets[sheetNames[si]];
-    if (!s || s.length < 2) continue;
+    if (!s || s.length < 1) continue;
+
+    if (sname === ALIAS_SHEET) {
+      // 列式：每列首行为标准名，同列下方为别名，全部映射到标准名
+      const maxCol = Math.max(...s.map(r => (r ? r.length : 0)), 0);
+      for (let ci = 0; ci < maxCol; ci++) {
+        const canonical = cleanAccessoryName(s[0]?.[ci]);
+        if (!canonical) continue;
+        for (let ri = 0; ri < s.length; ri++) {
+          const alias = cleanAccessoryName(s[ri]?.[ci]);
+          if (!alias) continue;
+          aliases[alias] = canonical;
+        }
+      }
+      continue;
+    }
+
+    if (s.length < 2) continue;
     const headerRow = s[0];
     for (let ci = 0; ci < headerRow.length; ci++) {
       const stallName = String(headerRow[ci] || '').trim();
@@ -96,7 +117,18 @@ async function parsePeijianConfigSheet(sheets, sheetNames) {
       }
     }
   }
-  return { mapping, stalls, stallOrder };
+  return { mapping, stalls, stallOrder, aliases };
+}
+
+// cleanAccessoryName 与 Go 端 internal/peijian.cleanAccessoryName 保持一致：
+// 去开头「单独」前缀、去结尾「不含壳」尾注（可带 - / 空格），最后 trim。
+function cleanAccessoryName(name) {
+  name = String(name || '').trim();
+  if (name.startsWith('单独')) name = name.slice(2).trim();
+  if (name.endsWith('不含壳')) {
+    name = name.slice(0, -'不含壳'.length).replace(/[\s\-]+$/, '');
+  }
+  return name.trim();
 }
 
 // ---- Filter Processing ----
@@ -192,7 +224,7 @@ async function runPeijian() {
   UI.showResult('peijian', null, null);
   try {
     const { headers, rows } = await Excel.read(state.orderFile);
-    const engine = { mapping: state.peijianEngine.mapping, stalls: state.peijianEngine.stalls, stallOrder: state.peijianEngine.stallOrder };
+    const engine = { mapping: state.peijianEngine.mapping, stalls: state.peijianEngine.stalls, stallOrder: state.peijianEngine.stallOrder, aliases: state.peijianEngine.aliases };
     const data = WasmBridge.peijianProcess(rows, headers, engine);
     // data.StallOrders is map[string][]accessoryRow, but through JSON all fields are exported
     const summary = {};
@@ -405,4 +437,9 @@ async function runDatu() {
     UI.setProcessing('datu', false);
     UI.hideSpinner('datu');
   }
+}
+
+// 便于 node:test 单元测试导入纯函数（浏览器环境无 module，忽略此块）
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { cleanAccessoryName, parsePeijianConfigSheet };
 }

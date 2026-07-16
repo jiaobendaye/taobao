@@ -42,6 +42,7 @@ type peijianEngineJSON struct {
 	Mapping    map[string][]string `json:"mapping"`
 	Stalls     map[string]string   `json:"stalls"`
 	StallOrder []string            `json:"stallOrder"`
+	Aliases    map[string]string   `json:"aliases"`
 }
 
 func (e *peijianEngineJSON) toEngine() *peijian.Engine {
@@ -49,6 +50,7 @@ func (e *peijianEngineJSON) toEngine() *peijian.Engine {
 		Mapping:    e.Mapping,
 		Stalls:     e.Stalls,
 		StallOrder: e.StallOrder,
+		Aliases:    e.Aliases,
 	}
 }
 
