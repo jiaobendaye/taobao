@@ -223,11 +223,12 @@ func loadStallMapping(f *excelize.File, sheetNames []string) (map[string]string,
 // extractAccessories 从 SKU 名称中提取配件列表。
 // 有 +：+ 前为手机壳（忽略），+ 后的每段为配件
 // 无 +：SKU 本身为配件
+// 每个配件名都经 cleanAccessoryName 清洗。
 func extractAccessories(skuName string) []string {
 	segments := strings.Split(skuName, "+")
 	if len(segments) < 2 {
 		// 无 +，SKU 本身就是配件
-		name := strings.TrimSpace(skuName)
+		name := cleanAccessoryName(skuName)
 		if name == "" {
 			return nil
 		}
@@ -236,12 +237,25 @@ func extractAccessories(skuName string) []string {
 
 	var accessories []string
 	for i := 1; i < len(segments); i++ { // 跳过第一个（手机壳）
-		seg := strings.TrimSpace(segments[i])
+		seg := cleanAccessoryName(segments[i])
 		if seg != "" {
 			accessories = append(accessories, seg)
 		}
 	}
 	return accessories
+}
+
+// cleanAccessoryName 清洗配件名称，得到真正的配件名：
+// 去掉开头的「单独」前缀、结尾的「不含壳」尾注（可带前导 - 或空格），最后 TrimSpace。
+// 例：「单独青苹果支架 -不含壳」→「青苹果支架」；「布丁夹心鲷鱼烧支架 不含壳」→「布丁夹心鲷鱼烧支架」
+func cleanAccessoryName(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.TrimPrefix(name, "单独")
+	name = strings.TrimSpace(name)
+	if trimmed := strings.TrimSuffix(name, "不含壳"); trimmed != name {
+		name = strings.TrimRight(trimmed, " -")
+	}
+	return strings.TrimSpace(name)
 }
 
 // ---- 主处理函数 ----

@@ -59,6 +59,51 @@ func TestExtractAccessories_Spaces(t *testing.T) {
 	}
 }
 
+// ---- cleanAccessoryName 测试 ----
+
+func TestCleanAccessoryName(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"单独青苹果支架 -不含壳", "青苹果支架"},
+		{"单独青苹果支架-不含壳", "青苹果支架"},
+		{"青苹果支架 -不含壳", "青苹果支架"},
+		{"布丁夹心鲷鱼烧支架 不含壳", "布丁夹心鲷鱼烧支架"},
+		{"单独布丁夹心鲷鱼烧支架不含壳", "布丁夹心鲷鱼烧支架"},
+		{"单独青苹果支架", "青苹果支架"},
+		{"青苹果支架", "青苹果支架"},
+		{" 单独 青苹果支架 -不含壳 ", "青苹果支架"}, // 前缀后空格
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			if got := cleanAccessoryName(tt.in); got != tt.want {
+				t.Errorf("cleanAccessoryName(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractAccessories_Clean(t *testing.T) {
+	tests := []struct {
+		sku  string
+		want []string
+	}{
+		{"单独青苹果支架 -不含壳", []string{"青苹果支架"}},
+		{"奶油蓝+单独青苹果支架 -不含壳", []string{"青苹果支架"}},
+		{"奶油蓝+单独青苹果支架 -不含壳+红色手提绳", []string{"青苹果支架", "红色手提绳"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.sku, func(t *testing.T) {
+			got := extractAccessories(tt.sku)
+			if !equalStrings(got, tt.want) {
+				t.Errorf("extractAccessories(%q) = %v, want %v", tt.sku, got, tt.want)
+			}
+		})
+	}
+}
+
 // ---- LoadEngine / loadPeijianMapping 测试 ----
 
 func TestLoadEngine_WithTestData(t *testing.T) {

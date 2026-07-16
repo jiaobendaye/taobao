@@ -5,7 +5,7 @@
 这是一个基于 Wails v2 的桌面应用 + CLI 工具，用于处理淘宝手机壳订单的 Excel 文件。支持三大功能：
 1. **订单筛选** (`filter`) — 将订单按多件/疑难/正常/配件分类
 2. **档口分配** (`dangkou`) — 按自设编码将订单分配给不同档口
-3. **配件提取** (`peijian`) — 从订单规格中提取并汇总配件信息
+3. **配件提取** (`peijian`) — 从订单规格中提取配件并按自设编码分配到档口
 
 ## 技术栈
 
@@ -33,8 +33,8 @@
 │   ├── dangkou/         # 档口分配模块
 │   │   ├── dangkou.go       # 引擎 + 匹配 + 主流程
 │   │   └── dangkou_test.go  # 单元测试
-│   ├── peijian/         # 配件提取模块
-│   │   ├── peijian.go       # 提取 + 汇总 + 分类
+│   ├── peijian/         # 配件提取 + 档口分配模块
+│   │   ├── peijian.go       # 引擎加载 + 提取 + 分配 + Excel 输出
 │   │   └── peijian_test.go  # 单元测试
 │   └── logger/          # 简洁的日志（文件+控制台）
 │       └── logger.go
@@ -67,7 +67,7 @@ make dev
 make clean
 ```
 
-构建产物在 `build/bin/` 目录，配置文件（`keywords.json`、`parts.json`、`columns.json`、`dangkou_config.json`）和日志文件与该目录中的可执行文件同目录。
+构建产物在 `build/bin/` 目录，配置文件（`keywords.json`、`dangkou_config.json`、`peijian_config.json`）和日志文件与该目录中的可执行文件同目录。
 
 ## 测试
 
@@ -86,11 +86,8 @@ phonecase-tools filter <Excel文件>
 # 档口分配
 phonecase-tools dangkou <订单Excel文件> [自设编码.xlsx]
 
-# 配件提取
-phonecase-tools peijian extract <Excel文件>
-
-# 配件汇总
-phonecase-tools peijian merge <pending.xlsx>
+# 配件提取 + 档口分配
+phonecase-tools peijian <订单Excel文件> <配件编码.xlsx>
 ```
 
 ## 关键设计
@@ -117,19 +114,29 @@ phonecase-tools peijian merge <pending.xlsx>
 - 配置文件路径保存在 `dangkou_config.json`
 
 ### 配件提取 (peijian)
-- 两阶段处理：`Extract`（提取）→ `Merge`（汇总）
-- `Extract` 根据配件关键词对订单分类：简单订单 > 待处理订单 > 无配件订单
-- 简单订单：含 `+` 分隔符、无买家留言、无卖家备注、无备注/咨询关键词
-- 配件关键词通过 `parts.json` 配置，默认包括支架、吸盘、串珠等
-- `ExtractParts` 解析 `+` 分隔的规格段，`matchPart` 按后缀匹配配件名
-- `Merge` 汇总 pending.xlsx 的所有 Sheet 中的配件，按名称+颜色聚合，按数量降序排列
-- 列名可通过 `columns.json` 自定义（spec、buyerMsg、sellerNote、quantity）
+- `Engine` 从「配件编码.xlsx」加载两层映射：
+  1. Sheet 1（自设编码表）：表头 `商品ID | SKU名称 | 编码1 | 编码2 | ...`，映射 `"商品ID|SKU名称"`（小写）→ `[]自设编码`（按编码列顺序）
+  2. Sheet 2+（档口分配）：列式布局，第 1 行为档口名，下方为该档口的自设编码；`StallOrder` 按列顺序决定优先级
+- 加载时**强校验**：某 SKU 的配件数必须等于其编码列数量，不一致直接报错（`loadPeijianMapping`）
+- 配件提取 `extractAccessories`：按 `+` 分割 SKU 名称
+  - 有 `+`：`+` 前为手机壳（忽略），`+` 后每段为一个配件
+  - 无 `+`：整个 SKU 即为配件
+- 主流程 `Process` → `ProcessData`（纯逻辑，无 I/O）：
+  1. `ParseSpec(商品规格)` 取 SKU，拼 `商品ID|SKU`（小写）查 `Mapping`
+  2. 查不到 → `NoMatch`（无匹配自设编码）；配件数≠编码数 → `Unassigned`
+  3. 每个配件用对应编码查 `Stalls` 找档口；无档口 → `Unassigned`（未分配档口），否则记入 `StallOrders[档口]` 并累加 `Summary[档口] += 商品数量`
+- 商品ID 用 `GetCellValueSafe`（非 `GetRows`）读取以避免科学计数法/大数字精度问题
+- 输出 `<订单名>_output/配件分配.xlsx`：
+  - 汇总 Sheet（首位）：每列一个活跃档口，下方 `配件名 x数量`，按数量降序
+  - 每档口一个明细 Sheet：`店铺名称|订单编号|商品id|商品规格|商品数量|配件名称`
+  - `未分配档口` / `无匹配自设编码`：输出原始完整行
+- 配件编码文件路径保存在 `peijian_config.json`
 
 ### 配置系统
 - 所有模块的配置文件都保存在可执行文件同目录
 - 使用 `os.Executable()` 获取路径，`configSearchPaths` 提供多路径搜索（exe同目录 → 当前目录）
 - 前端通过 Wails 绑定方法获取/保存配置
-- `keywords.json`、`parts.json`、`columns.json` 直接替换；`dangkou_config.json` 存储文件路径
+- `keywords.json` 直接替换；`dangkou_config.json`、`peijian_config.json` 存储文件路径
 
 ### GUI 模式
 - Wails 框架，前端通过 `window.go.main.App.*` 调用后端
@@ -156,10 +163,10 @@ phonecase-tools peijian merge <pending.xlsx>
 3. 更新 `writeOutput` 添加新 Sheet
 4. 更新 CLI 输出 `main.go` 的 `runCLI` case "filter"
 
-### 添加新的配件关键词
-1. 编辑运行目录下的 `parts.json`（通过 GUI 配置面板 → 齿轮按钮）
-2. 或修改 `internal/peijian/peijian.go` 的 `DefaultPartsConfig`
-3. 关键词匹配逻辑在 `matchPart` 中（后缀匹配）
+### 新增/修改配件的编码与档口映射
+1. 编辑「配件编码.xlsx」配置文件（无需改代码）
+2. Sheet 1：新增一行 `商品ID | SKU名称 | 编码1 | 编码2 | ...`，注意编码列数必须与该 SKU 的配件数一致
+3. Sheet 2+：在对应档口列下加入该自设编码
 
 ### 添加新的档口
 1. 在自设编码 Excel 文件中添加新的 Sheet（Sheet 名即为档口名）
