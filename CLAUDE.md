@@ -117,14 +117,16 @@ phonecase-tools peijian <订单Excel文件> <配件编码.xlsx>
 - `Engine` 从「配件编码.xlsx」加载两层映射：
   1. Sheet 1（自设编码表）：表头 `商品ID | SKU名称 | 编码1 | 编码2 | ...`，映射 `"商品ID|SKU名称"`（小写）→ `[]自设编码`（按编码列顺序）
   2. Sheet 2+（档口分配）：列式布局，第 1 行为档口名，下方为该档口的自设编码；`StallOrder` 按列顺序决定优先级
+  3. Sheet「配件别名」（可选）：列式布局，每列一种配件，**第 1 行为标准名**，同列下方为别名；`loadAliasMapping` 生成 别名→标准名 映射（该 sheet 会从档口 sheet 列表中排除）
 - 加载时**强校验**：某 SKU 的配件数必须等于其编码列数量，不一致直接报错（`loadPeijianMapping`）
 - 配件提取 `extractAccessories`：按 `+` 分割 SKU 名称
   - 有 `+`：`+` 前为手机壳（忽略），`+` 后每段为一个配件
   - 无 `+`：整个 SKU 即为配件
+  - 每个配件名经 `cleanAccessoryName` 清洗：去开头「单独」前缀、去结尾「不含壳」尾注（可带 `-`/空格），最后 `TrimSpace`
 - 主流程 `Process` → `ProcessData`（纯逻辑，无 I/O）：
   1. `ParseSpec(商品规格)` 取 SKU，拼 `商品ID|SKU`（小写）查 `Mapping`
   2. 查不到 → `NoMatch`（无匹配自设编码）；配件数≠编码数 → `Unassigned`
-  3. 每个配件用对应编码查 `Stalls` 找档口；无档口 → `Unassigned`（未分配档口），否则记入 `StallOrders[档口]` 并累加 `Summary[档口] += 商品数量`
+  3. 每个配件用对应编码查 `Stalls` 找档口；无档口 → `Unassigned`（未分配档口），否则经 `Aliases` 别名归一后记入 `StallOrders[档口]` 并累加 `Summary[档口] += 商品数量`
 - 商品ID 用 `GetCellValueSafe`（非 `GetRows`）读取以避免科学计数法/大数字精度问题
 - 输出 `<订单名>_output/配件分配.xlsx`：
   - 汇总 Sheet（首位）：每列一个活跃档口，下方 `配件名 x数量`，按数量降序

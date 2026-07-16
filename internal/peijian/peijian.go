@@ -28,6 +28,7 @@ type Engine struct {
 	Mapping    map[string][]string `json:"mapping"`    // "商品ID|SKU名称" → []自设编码 (按编码1~N的顺序)
 	Stalls     map[string]string   `json:"stalls"`     // 自设编码 → 档口名
 	StallOrder []string            `json:"stallOrder"` // 档口名列表（按 Sheet 2 列顺序）
+	Aliases    map[string]string   `json:"aliases"`    // 配件别名 → 标准名（列式布局，列首行为标准名）
 }
 
 // Result 配件提取分配结果
@@ -74,8 +75,21 @@ func LoadEngine(configPath string) (*Engine, error) {
 	}
 	engine.Mapping = mapping
 
-	// Sheet 2+: 档口分配
-	stalls, stallOrder, err := loadStallMapping(f, sheets[1:])
+	// Sheet 2+: 档口分配（排除「配件别名」sheet）
+	var stallSheets []string
+	for _, s := range sheets[1:] {
+		if strings.TrimSpace(s) == aliasSheetName {
+			aliases, err := loadAliasMapping(f, s)
+			if err != nil {
+				return nil, fmt.Errorf("读取配件别名失败: %w", err)
+			}
+			engine.Aliases = aliases
+			continue
+		}
+		stallSheets = append(stallSheets, s)
+	}
+
+	stalls, stallOrder, err := loadStallMapping(f, stallSheets)
 	if err != nil {
 		return nil, fmt.Errorf("读取档口分配失败: %w", err)
 	}
@@ -83,6 +97,54 @@ func LoadEngine(configPath string) (*Engine, error) {
 	engine.StallOrder = stallOrder
 
 	return engine, nil
+}
+
+// aliasSheetName 配件别名 sheet 的名称
+const aliasSheetName = "配件别名"
+
+// loadAliasMapping 从「配件别名」sheet 读取 别名 → 标准名 映射。
+// 列式布局：每列一种配件，第一行为标准名，同列下方各行为别名，全部映射到标准名。
+func loadAliasMapping(f *excelize.File, sheetName string) (map[string]string, error) {
+	rows, err := f.GetRows(sheetName)
+	if err != nil {
+		return nil, err
+	}
+	aliases := make(map[string]string)
+	if len(rows) == 0 {
+		return aliases, nil
+	}
+
+	// 以最长行确定列数
+	maxCol := 0
+	for _, r := range rows {
+		if len(r) > maxCol {
+			maxCol = len(r)
+		}
+	}
+
+	for col := 0; col < maxCol; col++ {
+		// 标准名 = 第一行该列
+		canonical := ""
+		if col < len(rows[0]) {
+			canonical = cleanAccessoryName(rows[0][col])
+		}
+		if canonical == "" {
+			continue
+		}
+		// 同列所有行（含标准名自身）都映射到标准名
+		for j := 0; j < len(rows); j++ {
+			if col >= len(rows[j]) {
+				continue
+			}
+			alias := cleanAccessoryName(rows[j][col])
+			if alias == "" {
+				continue
+			}
+			aliases[alias] = canonical
+		}
+	}
+
+	return aliases, nil
 }
 
 // loadPeijianMapping 从 Sheet 1 读取 (商品ID, SKU名称) → []自设编码 映射
@@ -385,6 +447,11 @@ func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result 
 			if stall == "" {
 				result.Unassigned = append(result.Unassigned, row)
 				continue
+			}
+
+			// 别名归一：将配件别名转换为标准名
+			if canonical, ok := engine.Aliases[acc]; ok {
+				acc = canonical
 			}
 
 			result.StallOrders[stall] = append(result.StallOrders[stall], accessoryRow{

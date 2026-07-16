@@ -274,6 +274,73 @@ func TestLoadStallMapping_MultipleSheets(t *testing.T) {
 	}
 }
 
+// ---- 配件别名测试 ----
+
+func TestLoadAliasMapping(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+
+	sheet := aliasSheetName
+	f.SetSheetName("Sheet1", sheet)
+	// 列式布局：每列首行为标准名，下方为别名
+	f.SetCellValue(sheet, "A1", "奶黄推拉支架")   // 标准名
+	f.SetCellValue(sheet, "A2", "奶黄色推拉支架") // 别名
+	f.SetCellValue(sheet, "A3", "奶油黄推拉支架") // 别名
+	f.SetCellValue(sheet, "B1", "奶黄糯米糍支架") // 标准名
+	f.SetCellValue(sheet, "B2", "芒果糯米糍支架") // 别名
+
+	aliases, err := loadAliasMapping(f, sheet)
+	if err != nil {
+		t.Fatalf("loadAliasMapping failed: %v", err)
+	}
+
+	tests := map[string]string{
+		"奶黄推拉支架":  "奶黄推拉支架", // 标准名映射到自身
+		"奶黄色推拉支架": "奶黄推拉支架",
+		"奶油黄推拉支架": "奶黄推拉支架",
+		"奶黄糯米糍支架": "奶黄糯米糍支架",
+		"芒果糯米糍支架": "奶黄糯米糍支架",
+	}
+	for alias, want := range tests {
+		if got := aliases[alias]; got != want {
+			t.Errorf("aliases[%q] = %q, want %q", alias, got, want)
+		}
+	}
+}
+
+func TestProcessData_AliasNormalization(t *testing.T) {
+	engine := &Engine{
+		Mapping: map[string][]string{
+			"123|壳+奶黄色推拉支架": {"CODE1"},
+			"456|壳+奶黄推拉支架":  {"CODE1"},
+		},
+		Stalls:     map[string]string{"code1": "档口A"},
+		StallOrder: []string{"档口A"},
+		Aliases: map[string]string{
+			"奶黄推拉支架":  "奶黄推拉支架",
+			"奶黄色推拉支架": "奶黄推拉支架",
+		},
+	}
+
+	headers := []string{"商品id", "商品规格", "商品数量"}
+	dataRows := [][]string{
+		{"123", "Phone|壳+奶黄色推拉支架", "2"}, // 别名
+		{"456", "Phone|壳+奶黄推拉支架", "3"},  // 标准名
+	}
+
+	result := ProcessData(dataRows, headers, engine)
+
+	orders := result.StallOrders["档口A"]
+	if len(orders) != 2 {
+		t.Fatalf("expected 2 orders in 档口A, got %d", len(orders))
+	}
+	for _, o := range orders {
+		if o.Accessory != "奶黄推拉支架" {
+			t.Errorf("accessory = %q, want 奶黄推拉支架 (别名应归一)", o.Accessory)
+		}
+	}
+}
+
 // ---- Process 集成测试 ----
 
 func TestProcess_EndToEnd(t *testing.T) {
