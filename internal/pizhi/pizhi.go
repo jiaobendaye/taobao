@@ -39,11 +39,13 @@ type Engine struct {
 
 // AggregateRow 档口内的聚合行
 type AggregateRow struct {
-	ProductID string // 商品ID
-	SKU       string // SKU名称
-	Model     string // 手机型号
-	Quantity  int    // 数量合计
-	ImageKey  string // 用于在 Engine.Items 中查找图片的 key
+	ProductID  string // 商品ID
+	SKU        string // SKU名称
+	Model      string // 手机型号
+	Quantity   int    // 数量合计
+	ImageKey   string // 用于在 Engine.Items 中查找图片的 key
+	BuyerNote  string // 买家留言（多行用 "\n" 拼接 + 去重）
+	SellerNote string // 卖家备注（多行用 "\n" 拼接 + 去重）
 }
 
 // Result 处理结果
@@ -260,25 +262,37 @@ func Process(filename, configPath string) (*Result, error) {
 
 // ProcessData 对已解析的订单数据执行聚合分配，不涉及文件 I/O。
 // 聚合键：(商品ID, SKU名称, 手机型号) 三者都相同的订单合并数量。
+// 同一聚合键内的买家留言 / 卖家备注去重后用 "\n" 拼接。
 func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result {
 	colProductID := common.FindColumn(headers, "商品id")
 	colSpec := common.FindColumn(headers, "商品规格")
 	colQty := common.FindColumn(headers, "商品数量")
+	colBuyerNote := common.FindColumn(headers, "买家留言")
+	colSellerNote := common.FindColumn(headers, "卖家备注")
 
 	result := &Result{
 		StallAggregates: make(map[string][]AggregateRow),
 		Total:           len(dataRows),
 	}
 
-	// 按 (商品ID, SKU, 型号) 聚合
+	// 按 (档口, 商品ID, SKU, 型号) 聚合
 	type aggKey struct {
-		Stall    string
+		Stall     string
 		ProductID string
-		SKU      string
-		Model    string
+		SKU       string
+		Model     string
 	}
 	aggMap := make(map[aggKey]*AggregateRow)
 	aggOrder := []aggKey{} // 保留插入顺序
+
+	// 备忘集合：同一聚合键内已收集过的留言 / 备注（去重）
+	type notesSet struct {
+		buyer  map[string]struct{}
+		seller map[string]struct{}
+		buyerOrder  []string
+		sellerOrder []string
+	}
+	notes := make(map[aggKey]*notesSet)
 
 	for _, row := range dataRows {
 		productID := ""
@@ -293,6 +307,8 @@ func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result 
 		if colQty >= 0 && colQty < len(row) {
 			qty = parseQty(row[colQty])
 		}
+		buyerNote := readNote(row, colBuyerNote)
+		sellerNote := readNote(row, colSellerNote)
 
 		model, skuName := common.ParseSpec(spec)
 		imageKey := strings.ToLower(productID + "|" + skuName)
@@ -315,6 +331,31 @@ func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result 
 				ImageKey:  imageKey,
 			}
 			aggOrder = append(aggOrder, key)
+			notes[key] = &notesSet{
+				buyer:  make(map[string]struct{}),
+				seller: make(map[string]struct{}),
+			}
+		}
+		ns := notes[key]
+		if buyerNote != "" {
+			if _, ok := ns.buyer[buyerNote]; !ok {
+				ns.buyer[buyerNote] = struct{}{}
+				ns.buyerOrder = append(ns.buyerOrder, buyerNote)
+			}
+		}
+		if sellerNote != "" {
+			if _, ok := ns.seller[sellerNote]; !ok {
+				ns.seller[sellerNote] = struct{}{}
+				ns.sellerOrder = append(ns.sellerOrder, sellerNote)
+			}
+		}
+	}
+
+	// 把收集到的留言/备注回写到聚合行
+	for key, ns := range notes {
+		if row, ok := aggMap[key]; ok {
+			row.BuyerNote = strings.Join(ns.buyerOrder, "\n")
+			row.SellerNote = strings.Join(ns.sellerOrder, "\n")
 		}
 	}
 
@@ -325,6 +366,14 @@ func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result 
 	}
 
 	return result
+}
+
+// readNote 读取单元格中的买家留言 / 卖家备注；列缺失或单元格为空时返回空字符串。
+func readNote(row []string, colIdx int) string {
+	if colIdx < 0 || colIdx >= len(row) {
+		return ""
+	}
+	return strings.TrimSpace(row[colIdx])
 }
 
 func parseQty(s string) int {
@@ -372,13 +421,18 @@ func writeOutput(outputPath string, engine *Engine, result *Result) error {
 	return out.SaveAs(outputPath)
 }
 
-// writeStallSheet 写单个档口 sheet：表头 [型号, 数量, 图片]
+// writeStallSheet 写单个档口 sheet：表头 [型号, 数量, 图片, 买家留言, 卖家备注]
 func writeStallSheet(out *excelize.File, sheetName string, engine *Engine, rows []AggregateRow) {
-	headers := []string{"型号", "数量", "图片"}
+	headers := []string{"型号", "数量", "图片", "买家留言", "卖家备注"}
 	for colIdx, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(colIdx+1, 1)
 		out.SetCellValue(sheetName, cell, h)
 	}
+
+	// 买家留言 / 卖家备注所在列：开启自动换行，支持多行文本显示
+	wrapStyleID, _ := out.NewStyle(&excelize.Style{
+		Alignment: &excelize.Alignment{WrapText: true, Vertical: "top"},
+	})
 
 	// 目标显示像素
 	const targetPx = 100
@@ -431,6 +485,8 @@ func writeStallSheet(out *excelize.File, sheetName string, engine *Engine, rows 
 	out.SetColWidth(sheetName, "A", "A", 25)
 	out.SetColWidth(sheetName, "B", "B", 10)
 	out.SetColWidth(sheetName, "C", "C", colWidth)
+	out.SetColWidth(sheetName, "D", "D", 40)
+	out.SetColWidth(sheetName, "E", "E", 40)
 	rowHeight := float64(maxH+20) * 0.75
 	if rowHeight < 20 {
 		rowHeight = 20
@@ -445,6 +501,10 @@ func writeStallSheet(out *excelize.File, sheetName string, engine *Engine, rows 
 		rowNum := i + 2
 		out.SetCellValue(sheetName, fmt.Sprintf("A%d", rowNum), r.Model)
 		out.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), r.Quantity)
+		out.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), r.BuyerNote)
+		out.SetCellStyle(sheetName, fmt.Sprintf("D%d", rowNum), fmt.Sprintf("D%d", rowNum), wrapStyleID)
+		out.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), r.SellerNote)
+		out.SetCellStyle(sheetName, fmt.Sprintf("E%d", rowNum), fmt.Sprintf("E%d", rowNum), wrapStyleID)
 
 		item, ok := engine.Items[r.ImageKey]
 		if !ok || len(item.ImageBytes) == 0 {
