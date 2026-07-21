@@ -244,12 +244,11 @@ type PeijianResult struct {
 
 // PizhiResult 皮质壳分配结果
 type PizhiResult struct {
-	Success       bool              `json:"success"`
-	Error         string            `json:"error,omitempty"`
-	StallSummary  map[string]int    `json:"stallSummary"` // 档口名 → 型号数
-	Unmatched     int               `json:"unmatched"`     // 未匹配订单数
-	Total         int               `json:"total"`
-	OutputPath    string            `json:"outputPath"`
+	Success      bool           `json:"success"`
+	Error        string         `json:"error,omitempty"`
+	StallSummary map[string]int `json:"stallSummary"` // 档口名 → 订单行数
+	Total        int            `json:"total"`
+	OutputPath   string         `json:"outputPath"`
 }
 
 // DatuResult 打图分配结果
@@ -337,14 +336,13 @@ func (a *App) RunPizhiProcess(filePath string) PizhiResult {
 		return PizhiResult{Success: false, Error: err.Error()}
 	}
 	stallSummary := make(map[string]int)
-	for stall, rows := range result.StallAggregates {
+	for stall, rows := range result.StallOrders {
 		stallSummary[stall] = len(rows)
 	}
-	logger.Info("皮质壳分配完成: %v, 未匹配=%d", stallSummary, len(result.Unmatched))
+	logger.Info("皮质壳分配完成: %v", stallSummary)
 	return PizhiResult{
 		Success:      true,
 		StallSummary: stallSummary,
-		Unmatched:    len(result.Unmatched),
 		Total:        result.Total,
 		OutputPath:   result.OutputPath,
 	}

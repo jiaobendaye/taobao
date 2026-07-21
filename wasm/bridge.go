@@ -11,6 +11,7 @@ import (
 	"taobao/internal/datu"
 	"taobao/internal/filter"
 	"taobao/internal/peijian"
+	"taobao/internal/pizhi"
 )
 
 // ---- Filter ----
@@ -123,6 +124,33 @@ func datuProcess(this js.Value, args []js.Value) interface{} {
 	engine := a.EngineJSON.toEngine()
 	data := datu.ProcessData(a.Rows, a.Headers, engine)
 	return mustMarshal(datuResult{Data: data})
+}
+
+// ---- Pizhi ----
+
+type pizhiArgs struct {
+	Rows       [][]string      `json:"rows"`
+	Headers    []string        `json:"headers"`
+	EngineJSON pizhiEngineJSON `json:"engine"`
+}
+
+type pizhiResult struct {
+	Data  *pizhi.Result `json:"data"`
+	Error string        `json:"error,omitempty"`
+}
+
+func pizhiProcess(this js.Value, args []js.Value) interface{} {
+	if len(args) < 1 {
+		return mustMarshal(pizhiResult{Error: "pizhiProcess: missing JSON argument"})
+	}
+	var a pizhiArgs
+	if err := json.Unmarshal([]byte(args[0].String()), &a); err != nil {
+		return mustMarshal(pizhiResult{Error: fmt.Sprintf("pizhiProcess: invalid JSON: %v", err)})
+	}
+
+	engine := a.EngineJSON.toEngine()
+	data := pizhi.ProcessData(a.Rows, a.Headers, engine)
+	return mustMarshal(pizhiResult{Data: data})
 }
 
 // ---- helpers ----

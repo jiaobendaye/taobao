@@ -51,5 +51,9 @@ const WasmBridge = {
 
   datuProcess(rows, headers, engine) {
     return this.call('goDatuProcess', { rows, headers, engine });
+  },
+
+  pizhiProcess(rows, headers, engine) {
+    return this.call('goPizhiProcess', { rows, headers, engine });
   }
 };

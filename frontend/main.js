@@ -329,9 +329,8 @@ async function runPizhi() {
         var html = '';
         var sm = r.stallSummary || {};
         for (var k in sm) {
-            html += card(sm[k], k + ' (型号数)');
+            html += card(sm[k], k + ' (订单数)');
         }
-        html += card(r.unmatched, '未匹配', true);
         html += card(r.total, '总订单');
         resultStats.innerHTML = html;
         result.style.display = 'block';

@@ -6,6 +6,7 @@ import (
 	"taobao/internal/dangkou"
 	"taobao/internal/datu"
 	"taobao/internal/peijian"
+	"taobao/internal/pizhi"
 )
 
 // ---- Dangkou Engine JSON types ----
@@ -65,5 +66,27 @@ func (e *datuEngineJSON) toEngine() *datu.Engine {
 	return &datu.Engine{
 		FactoryByProductID: e.FactoryByProductID,
 		Factories:          e.Factories,
+	}
+}
+
+// ---- Pizhi Engine JSON types ----
+
+type pizhiEngineJSON struct {
+	Items  map[string]pizhiItemJSON `json:"items"`
+	Stalls []string                 `json:"stalls"`
+}
+
+type pizhiItemJSON struct {
+	Stall string `json:"stall"`
+}
+
+func (e *pizhiEngineJSON) toEngine() *pizhi.Engine {
+	items := make(map[string]pizhi.ConfigItem, len(e.Items))
+	for k, v := range e.Items {
+		items[k] = pizhi.ConfigItem{Stall: v.Stall}
+	}
+	return &pizhi.Engine{
+		Items:  items,
+		Stalls: e.Stalls,
 	}
 }

@@ -24,6 +24,7 @@
   <button class="tab active" data-panel="filter">🔍 订单筛选</button>
   <button class="tab" data-panel="peijian">🔧 配件提取</button>
   <button class="tab" data-panel="dangkou">🏪 档口分配</button>
+  <button class="tab" data-panel="pizhi">👜 皮质壳分配</button>
   <button class="tab" data-panel="datu">🖼️ 打图分配</button>
 </div>
 
@@ -74,6 +75,18 @@
     <div class="result-area"></div>
   </div>
 
+  <!-- Pizhi Panel -->
+  <div id="pizhi" class="tool-panel">
+    <div class="config-bar">
+      <button onclick="document.getElementById('pz-cfg-file').click()">⚙ 皮质壳配置</button>
+      <span class="config-path" id="pizhi-config-path">未配置</span>
+      <input type="file" id="pz-cfg-file" accept=".xlsx" onchange="handlePizhiConfig(this.files[0])">
+    </div>
+    <button class="btn-process" onclick="runPizhi()">开始分配</button>
+    <div class="spinner"></div>
+    <div class="result-area"></div>
+  </div>
+
   <!-- Datu Panel -->
   <div id="datu" class="tool-panel">
     <div class="config-bar">
@@ -111,6 +124,7 @@
     UI.initTab('.tab[data-panel="dangkou"]', 'dangkou');
     UI.initTab('.tab[data-panel="peijian"]', 'peijian');
     UI.initTab('.tab[data-panel="datu"]', 'datu');
+    UI.initTab('.tab[data-panel="pizhi"]', 'pizhi');
 
     // Restore datu config from localStorage
     const dc = Config.getDatuConfig();
@@ -152,6 +166,11 @@ async function handleDatuConfig(file) {
   if (!file) return;
   try { await loadDatuConfig(file); }
   catch(e) { alert('打图工厂配置文件加载失败: ' + e.message); }
+}
+async function handlePizhiConfig(file) {
+  if (!file) return;
+  try { await loadPizhiConfig(file); }
+  catch(e) { alert('皮质壳配置文件加载失败: ' + e.message); }
 }
 </script>
 </body>

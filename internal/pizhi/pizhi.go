@@ -37,23 +37,22 @@ type Engine struct {
 	Stalls []string              `json:"stalls"` // 按 Sheet 顺序排列的档口名
 }
 
-// AggregateRow 档口内的聚合行
-type AggregateRow struct {
+// OrderRow 档口内的订单行（逐行输出，不聚合）
+type OrderRow struct {
 	ProductID  string // 商品ID
 	SKU        string // SKU名称
 	Model      string // 手机型号
-	Quantity   int    // 数量合计
+	Quantity   int    // 商品数量
 	ImageKey   string // 用于在 Engine.Items 中查找图片的 key
-	BuyerNote  string // 买家留言（多行用 "\n" 拼接 + 去重）
-	SellerNote string // 卖家备注（多行用 "\n" 拼接 + 去重）
+	BuyerNote  string // 买家留言
+	SellerNote string // 卖家备注
 }
 
 // Result 处理结果
 type Result struct {
-	StallAggregates map[string][]AggregateRow `json:"stallAggregates"` // 档口名 → 聚合行
-	Unmatched       [][]string                `json:"unmatched"`       // 未匹配的订单行
-	OutputPath      string                    `json:"outputPath"`
-	Total           int                       `json:"total"`
+	StallOrders map[string][]OrderRow `json:"stallOrders"` // 档口名 → 订单行
+	OutputPath  string                `json:"outputPath"`
+	Total       int                   `json:"total"`
 }
 
 // ---- 引擎加载 ----
@@ -260,9 +259,8 @@ func Process(filename, configPath string) (*Result, error) {
 	return result, nil
 }
 
-// ProcessData 对已解析的订单数据执行聚合分配，不涉及文件 I/O。
-// 聚合键：(商品ID, SKU名称, 手机型号) 三者都相同的订单合并数量。
-// 同一聚合键内的买家留言 / 卖家备注去重后用 "\n" 拼接。
+// ProcessData 对已解析的订单数据执行逐行分配，不涉及文件 I/O。
+// 每笔订单按 (商品ID, SKU名称) 查引擎找档口，未匹配则跳过。
 func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result {
 	colProductID := common.FindColumn(headers, "商品id")
 	colSpec := common.FindColumn(headers, "商品规格")
@@ -271,28 +269,9 @@ func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result 
 	colSellerNote := common.FindColumn(headers, "卖家备注")
 
 	result := &Result{
-		StallAggregates: make(map[string][]AggregateRow),
-		Total:           len(dataRows),
+		StallOrders: make(map[string][]OrderRow),
+		Total:       len(dataRows),
 	}
-
-	// 按 (档口, 商品ID, SKU, 型号) 聚合
-	type aggKey struct {
-		Stall     string
-		ProductID string
-		SKU       string
-		Model     string
-	}
-	aggMap := make(map[aggKey]*AggregateRow)
-	aggOrder := []aggKey{} // 保留插入顺序
-
-	// 备忘集合：同一聚合键内已收集过的留言 / 备注（去重）
-	type notesSet struct {
-		buyer  map[string]struct{}
-		seller map[string]struct{}
-		buyerOrder  []string
-		sellerOrder []string
-	}
-	notes := make(map[aggKey]*notesSet)
 
 	for _, row := range dataRows {
 		productID := ""
@@ -315,54 +294,18 @@ func ProcessData(dataRows [][]string, headers []string, engine *Engine) *Result 
 
 		item, ok := engine.Items[imageKey]
 		if !ok {
-			result.Unmatched = append(result.Unmatched, row)
 			continue
 		}
 
-		key := aggKey{Stall: item.Stall, ProductID: productID, SKU: skuName, Model: model}
-		if existing, exists := aggMap[key]; exists {
-			existing.Quantity += qty
-		} else {
-			aggMap[key] = &AggregateRow{
-				ProductID: productID,
-				SKU:       skuName,
-				Model:     model,
-				Quantity:  qty,
-				ImageKey:  imageKey,
-			}
-			aggOrder = append(aggOrder, key)
-			notes[key] = &notesSet{
-				buyer:  make(map[string]struct{}),
-				seller: make(map[string]struct{}),
-			}
-		}
-		ns := notes[key]
-		if buyerNote != "" {
-			if _, ok := ns.buyer[buyerNote]; !ok {
-				ns.buyer[buyerNote] = struct{}{}
-				ns.buyerOrder = append(ns.buyerOrder, buyerNote)
-			}
-		}
-		if sellerNote != "" {
-			if _, ok := ns.seller[sellerNote]; !ok {
-				ns.seller[sellerNote] = struct{}{}
-				ns.sellerOrder = append(ns.sellerOrder, sellerNote)
-			}
-		}
-	}
-
-	// 把收集到的留言/备注回写到聚合行
-	for key, ns := range notes {
-		if row, ok := aggMap[key]; ok {
-			row.BuyerNote = strings.Join(ns.buyerOrder, "\n")
-			row.SellerNote = strings.Join(ns.sellerOrder, "\n")
-		}
-	}
-
-	// 按档口分组，保持 Sheet 顺序
-	for _, key := range aggOrder {
-		row := aggMap[key]
-		result.StallAggregates[key.Stall] = append(result.StallAggregates[key.Stall], *row)
+		result.StallOrders[item.Stall] = append(result.StallOrders[item.Stall], OrderRow{
+			ProductID:  productID,
+			SKU:        skuName,
+			Model:      model,
+			Quantity:   qty,
+			ImageKey:   imageKey,
+			BuyerNote:  buyerNote,
+			SellerNote: sellerNote,
+		})
 	}
 
 	return result
@@ -399,7 +342,7 @@ func writeOutput(outputPath string, engine *Engine, result *Result) error {
 
 	firstWritten := false
 	for _, stallName := range engine.Stalls {
-		rows, ok := result.StallAggregates[stallName]
+		rows, ok := result.StallOrders[stallName]
 		if !ok || len(rows) == 0 {
 			continue
 		}
@@ -422,7 +365,7 @@ func writeOutput(outputPath string, engine *Engine, result *Result) error {
 }
 
 // writeStallSheet 写单个档口 sheet：表头 [型号, 数量, 图片, 买家留言, 卖家备注]
-func writeStallSheet(out *excelize.File, sheetName string, engine *Engine, rows []AggregateRow) {
+func writeStallSheet(out *excelize.File, sheetName string, engine *Engine, rows []OrderRow) {
 	headers := []string{"型号", "数量", "图片", "买家留言", "卖家备注"}
 	for colIdx, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(colIdx+1, 1)

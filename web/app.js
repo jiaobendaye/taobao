@@ -9,6 +9,8 @@ const state = {
   peijianConfigName: '',
   datuEngine: null,     // { factoryByProductID, factories }
   datuConfigName: '',
+  pizhiEngine: null,    // { items, stalls, images }
+  pizhiConfigName: '',
 };
 
 // ---- Filter ----
@@ -442,4 +444,149 @@ async function runDatu() {
 // 便于 node:test 单元测试导入纯函数（浏览器环境无 module，忽略此块）
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { cleanAccessoryName, parsePeijianConfigSheet };
+}
+
+// ---- Pizhi: parse config + run ----
+
+const HUCRE_URL = 'https://esm.sh/hucre@0.6.1/xlsx';
+
+async function parsePizhiConfigSheet(file) {
+  const { readXlsx } = await import(HUCRE_URL);
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const wb = await readXlsx(buf);
+
+  const items = {};
+  const stalls = [];
+  const images = {};
+
+  for (const sheet of wb.sheets) {
+    if (sheet.name.startsWith('WpsReserved')) continue;
+    if (!sheet.rows || sheet.rows.length < 2) continue;
+
+    const stallName = sheet.name;
+    stalls.push(stallName);
+
+    const header = sheet.rows[0];
+    const colPID = header.findIndex(h => String(h || '').trim() === '商品ID');
+    const colSKU = header.findIndex(h => String(h || '').trim().toLowerCase() === 'sku名称');
+    if (colPID < 0 || colSKU < 0) continue;
+
+    const imgByRow = new Map();
+    for (const img of (sheet.images || [])) {
+      const row = img.anchor && img.anchor.from ? img.anchor.from.row : undefined;
+      if (row !== undefined) imgByRow.set(row, img);
+    }
+
+    for (let r = 1; r < sheet.rows.length; r++) {
+      const row = sheet.rows[r];
+      const pid = String(row[colPID] || '').trim();
+      const sku = String(row[colSKU] || '').trim();
+      if (!pid || !sku) continue;
+
+      const key = (pid + '|' + sku).toLowerCase();
+      items[key] = { stall: stallName };
+
+      const img = imgByRow.get(r);
+      if (img && img.data) {
+        images[key] = { data: img.data, type: img.type || 'png' };
+      }
+    }
+  }
+
+  if (Object.keys(items).length === 0) throw new Error('配置表为空，未找到任何 (商品ID, SKU) 项');
+  return { items, stalls, images };
+}
+
+async function loadPizhiConfig(file) {
+  const cfg = await parsePizhiConfigSheet(file);
+  state.pizhiEngine = cfg;
+  state.pizhiConfigName = `${file.name} (${cfg.stalls.join(', ')})`;
+  UI.setConfigPath('pizhi-config-path', state.pizhiConfigName);
+}
+
+async function runPizhi() {
+  if (!state.orderFile) { UI.showError('pizhi', '请先选择订单 Excel 文件'); return; }
+  if (!state.pizhiEngine) { UI.showError('pizhi', '请先上传皮质壳配置文件（点击齿轮按钮）'); return; }
+  UI.setProcessing('pizhi', true);
+  UI.showSpinner('pizhi');
+  UI.showResult('pizhi', null, null);
+  try {
+    const { headers, rows } = await Excel.read(state.orderFile);
+    const engine = {
+      items: state.pizhiEngine.items,
+      stalls: state.pizhiEngine.stalls,
+    };
+    const data = WasmBridge.pizhiProcess(rows, headers, engine);
+
+    const stallOrders = data.stallOrders || {};
+    const summary = {};
+    for (const stall of state.pizhiEngine.stalls) {
+      if (stallOrders[stall] && stallOrders[stall].length) {
+        summary[stall] = stallOrders[stall].length;
+      }
+    }
+    summary['总订单'] = data.total || 0;
+
+    const { writeXlsx } = await import(HUCRE_URL);
+    const pzImages = state.pizhiEngine.images;
+    const sheets = [];
+
+    for (const stall of state.pizhiEngine.stalls) {
+      const orders = stallOrders[stall];
+      if (!orders || !orders.length) continue;
+
+      const sheetImages = [];
+      const rowDefs = new Map();
+      const dataRows = orders.map((o, i) => {
+        const img = pzImages[o.ImageKey];
+        if (img) {
+          sheetImages.push({
+            data: img.data,
+            type: img.type,
+            anchor: {
+              from: { row: i + 1, col: 2 },
+              to:   { row: i + 2, col: 3 },
+            },
+          });
+          rowDefs.set(i + 1, { height: 75 });
+        }
+        return {
+          model: o.Model,
+          qty: o.Quantity,
+          buyerNote: o.BuyerNote || '',
+          sellerNote: o.SellerNote || '',
+        };
+      });
+
+      sheets.push({
+        name: stall,
+        columns: [
+          { header: '型号', key: 'model', width: 25 },
+          { header: '数量', key: 'qty', width: 10 },
+          { header: '图片', key: 'img', width: 14 },
+          { header: '买家留言', key: 'buyerNote', width: 40 },
+          { header: '卖家备注', key: 'sellerNote', width: 40 },
+        ],
+        data: dataRows,
+        images: sheetImages,
+        rowDefs: rowDefs,
+      });
+    }
+
+    const outBuf = await writeXlsx({ sheets });
+    const baseName = state.orderFile.name.replace(/\.xlsx$/i, '');
+    const blob = new Blob([outBuf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    UI.showResult('pizhi', summary, () => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = baseName + '_皮质壳分配.xlsx';
+      a.click();
+    }, '📥 下载' + baseName + '_皮质壳分配.xlsx');
+  } catch (e) {
+    UI.showError('pizhi', e.message);
+  } finally {
+    UI.setProcessing('pizhi', false);
+    UI.hideSpinner('pizhi');
+  }
 }

@@ -123,8 +123,8 @@ func runCLI() {
 		}
 		fmt.Printf("已生成 %s\n", result.OutputPath)
 		fmt.Printf("  总订单: %d条\n", result.Total)
-		for stall, rows := range result.StallAggregates {
-			fmt.Printf("  %s: %d 个型号\n", stall, len(rows))
+		for stall, rows := range result.StallOrders {
+			fmt.Printf("  %s: %d 条订单\n", stall, len(rows))
 		}
 
 	case "datu":

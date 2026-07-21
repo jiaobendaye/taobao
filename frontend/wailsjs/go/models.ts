@@ -98,7 +98,6 @@ export namespace main {
 	    success: boolean;
 	    error?: string;
 	    stallSummary: Record<string, number>;
-	    unmatched: number;
 	    total: number;
 	    outputPath: string;
 	
@@ -111,7 +110,6 @@ export namespace main {
 	        this.success = source["success"];
 	        this.error = source["error"];
 	        this.stallSummary = source["stallSummary"];
-	        this.unmatched = source["unmatched"];
 	        this.total = source["total"];
 	        this.outputPath = source["outputPath"];
 	    }

@@ -2,11 +2,12 @@
 //
 // 编译: GOOS=js GOARCH=wasm go build -o phonecase.wasm ./wasm/
 //
-// 暴露四个全局 JS 函数:
+// 暴露五个全局 JS 函数:
 //   goFilterProcess(jsonArgs)   → JSON result
 //   goDangkouProcess(jsonArgs)  → JSON result
 //   goPeijianProcess(jsonArgs)  → JSON result
 //   goDatuProcess(jsonArgs)     → JSON result
+//   goPizhiProcess(jsonArgs)    → JSON result
 //
 //go:build js && wasm
 
@@ -24,6 +25,7 @@ func main() {
 	js.Global().Set("goDangkouProcess", js.FuncOf(dangkouProcess))
 	js.Global().Set("goPeijianProcess", js.FuncOf(peijianProcess))
 	js.Global().Set("goDatuProcess", js.FuncOf(datuProcess))
+	js.Global().Set("goPizhiProcess", js.FuncOf(pizhiProcess))
 
 	// 发送信号表明 Wasm 已就绪
 	notifyReady()
